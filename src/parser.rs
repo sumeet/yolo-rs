@@ -4,7 +4,11 @@ pub enum Expr {
     List(Vec<Expr>),
 }
 
-pub fn parse_exprs(cs: &mut impl Iterator<Item = char>, is_inside_list: bool) -> Expr {
+pub fn parse_exprs(cs: &mut impl Iterator<Item = char>) -> Expr {
+    parse_exprs_rec(cs, false)
+}
+
+fn parse_exprs_rec(cs: &mut impl Iterator<Item = char>, is_inside_list: bool) -> Expr {
     let mut exprs = vec![];
     let mut current_string : Option<String> = None;
     loop {
@@ -12,7 +16,7 @@ pub fn parse_exprs(cs: &mut impl Iterator<Item = char>, is_inside_list: bool) ->
             Some(c) => {
                 match c {
                     '(' => {
-                        exprs.push(parse_exprs(cs, true));
+                        exprs.push(parse_exprs_rec(cs, true));
                     }
                     ')' => {
                         if is_inside_list {

@@ -11,7 +11,7 @@ fn main() {
 "#;
 
     println!("--- PARSED ---");
-    let expr = parser::parse_exprs(&mut input.chars(), false);
+    let expr = parser::parse_exprs(&mut input.chars());
     println!("{:?}", expr);
 
     println!();
@@ -56,6 +56,7 @@ impl BasicInterpreter {
             functions: functions(),
         }
     }
+
     fn eval(&mut self, expr: Expr) -> InterpResult {
         match expr {
             Expr::Word(w) => {
@@ -80,7 +81,6 @@ impl BasicInterpreter {
             }
         }
     }
-
 }
 
 #[derive(PartialEq, Eq, Hash, Debug)]
