@@ -6,12 +6,10 @@ use std::collections::HashMap;
 mod parser;
 
 fn main() {
-    let input = r#"
-+ 1 1 3 4 5 (* 2 100 (* 100 100))
-"#;
-
     println!("--- PARSED ---");
-    let expr = parser::parse_exprs(&mut input.chars());
+    let expr = parser::parse_exprs(&mut r#"
++ 1 1 3 4 5 (* 2 100 (* 100 100))
+    "#.chars());
     println!("{:?}", expr);
 
     println!();
