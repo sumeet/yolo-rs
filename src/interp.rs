@@ -31,8 +31,9 @@ impl Interpreter {
             b"define" => builtins::define(self, expr),
             b"@" => builtins::dedef(self, expr),
             b"print-ascii" => builtins::print_ascii(self, expr),
-            b"." => builtins::eval_all(self, expr),
-            b"apply" => builtins::apply(self, expr),
+            // TODO: should .block return the last instead of returning all?
+            b".block" => builtins::eval_all(self, expr),
+            b"." => builtins::apply(self, expr),
             _ => return Err(format!("builtin {} not found", from_utf8(&w).unwrap()).into()),
         }
     }
@@ -68,7 +69,6 @@ mod builtins {
         args.push_front(Expr::Word(func_to_apply));
         interp.eval(Expr::List(args))
     }
-
 
     pub fn print_ascii(_: &mut Interpreter, mut expr: Expr) -> EvalResult {
         let w = grab_a_word(&mut expr)?;
