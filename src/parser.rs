@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 pub type Word = Vec<u8>;
 pub type List = VecDeque<Expr>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     Word(Word),
     List(List),
