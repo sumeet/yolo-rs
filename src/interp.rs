@@ -1,4 +1,4 @@
-use crate::parser::{Expr, Word, List, ExprRef};
+use crate::parser::{Expr, Word, ExprRef};
 use std::collections::HashMap;
 use std::str::{from_utf8};
 
@@ -7,6 +7,7 @@ pub enum EvalOutput<'a> {
     Ref(ExprRef<'a>),
     Owned(Expr),
 }
+
 pub type EvalResult<'a> = Result<EvalOutput<'a>, Box<dyn std::error::Error>>;
 
 pub struct Interpreter {
@@ -19,7 +20,7 @@ fn grab_an_expr(exprs: &'a mut impl Iterator<Item = &'a Expr>) -> Result<ExprRef
 
 impl Interpreter {
     pub fn new() -> Self {
-        Self { storage: HashMap::new(), arg_stack: vec![] }
+        Self { storage: HashMap::new() }
     }
 
     // TODO: this could take an iterator of exprs
@@ -42,8 +43,7 @@ impl Interpreter {
             b".define" => builtins::define(self, exprs),
             b".@" => builtins::dedef(self, exprs),
             b".print-ascii" => builtins::print_ascii(self, exprs),
-            // TODO: should .block return the last instead of returning all?
-            b".namespace-exec" => builtins::namespace_exec_all(self, exprs),
+            b".exec-all" => builtins::exec_all(self, exprs),
             b".call" => builtins::call(self, exprs),
             _ => return Err(format!("builtin {} not found", from_utf8(name).unwrap()).into()),
         }
@@ -74,10 +74,10 @@ mod builtins {
         }
     }
 
-    pub fn namespace_exec_all(interp: &'a mut Interpreter, exprs: &'a [Expr]) -> EvalResult<'a> {
-        let (last, init) = exprs.split_last().ok_or("tried to namespace exec empty expr list")?;
+    pub fn exec_all(interp: &'a mut Interpreter, exprs: &'a [Expr]) -> EvalResult<'a> {
+        let (last, init) = exprs.split_last().ok_or("tried to exec-all empty expr list")?;
         for expr in init {
-            interp.eval(expr);
+            interp.eval(expr)?;
         }
         Ok(EvalOutput::Owned(interp.eval(last)?))
     }

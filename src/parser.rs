@@ -1,5 +1,3 @@
-use std::borrow::Borrow;
-
 pub type Word = Vec<u8>;
 pub type List = Vec<Expr>;
 
@@ -14,7 +12,6 @@ pub enum ExprRef<'a> {
     Word(&'a Word),
     List(&'a List),
 }
-
 
 impl ExprRef<'_> {
     pub fn to_owned(&self) -> Expr {
@@ -42,37 +39,11 @@ impl ExprRef<'_> {
     }
 }
 
-
 impl Expr {
     pub fn as_ref(&self) -> ExprRef<'_> {
         match self {
             Expr::Word(w) => ExprRef::Word(w),
             Expr::List(l) => ExprRef::List(l),
-        }
-    }
-
-    pub fn empty_list() -> Self {
-        Self::List(List::new())
-    }
-
-    pub fn into_word(self) -> Result<Word, Box<dyn std::error::Error>> {
-        match self {
-            Expr::Word(w) => Ok(w),
-            otherwise => Err(format!("expected Word but got {:?}", otherwise).into())
-        }
-    }
-
-    pub fn into_list(self) -> Result<List, Box<dyn std::error::Error>> {
-        match self {
-            Expr::List(l) => Ok(l),
-            otherwise => Err(format!("expected List but got {:?}", otherwise).into())
-        }
-    }
-
-    pub fn as_mut_list(&mut self) -> Result<&mut List, Box<dyn std::error::Error>> {
-        match self {
-            Expr::List(l) => Ok(l),
-            otherwise => Err(format!("expected List but got {:?}", otherwise).into())
         }
     }
 }
