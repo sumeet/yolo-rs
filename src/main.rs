@@ -18,9 +18,11 @@ fn main() {
 // wouldn't be able to call it directly because none of these funcs are type checked
 //
 // another idea, the package icon can go on the item instead of an icon for the function itself
-r#".namespace-exec
+r#".exec-all
 (.define my-guy hello)
-(.call .print-ascii my-guy)
+(.print-ascii my-guy)
+(.call .print-ascii (my-guy))
+(.chain (@. my-guy) .print-ascii)
 "#;
     println!("{}", code);
     let expr = parser::parse_exprs(&mut code.as_bytes().into_iter().copied());
@@ -30,7 +32,7 @@ r#".namespace-exec
 
     let mut interpreter = Interpreter::new();
     println!("--- EVAL ---");
-    let res = interpreter.eval(&expr).unwrap();
+    let res = interpreter.eval(expr.as_ref()).unwrap();
     println!("--- RESULT ---");
     println!("{:?}", res);
 }

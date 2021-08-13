@@ -1,5 +1,7 @@
 pub type Word = Vec<u8>;
 pub type List = Vec<Expr>;
+pub type WordRef<'a> = &'a [u8];
+pub type ListRef<'a> = &'a [Expr];
 
 #[derive(Debug, Clone)]
 pub enum Expr {
@@ -9,29 +11,28 @@ pub enum Expr {
 
 #[derive(Debug)]
 pub enum ExprRef<'a> {
-    Word(&'a Word),
-    List(&'a List),
+    Word(WordRef<'a>),
+    List(ListRef<'a>),
 }
 
 impl ExprRef<'_> {
     pub fn to_owned(&self) -> Expr {
         match self {
             ExprRef::Word(w) => {
-                let w = (*w).clone();
-                Expr::Word(w)
+                Expr::Word(w.to_vec())
             },
-            ExprRef::List(l) => Expr::List((*l).clone()),
+            ExprRef::List(l) => Expr::List(l.to_vec()),
         }
     }
 
-    pub fn as_word(&self) -> Result<&Word, Box<dyn std::error::Error>> {
+    pub fn as_word(&self) -> Result<WordRef, Box<dyn std::error::Error>> {
         match self {
             Self::Word(w) => Ok(w),
             otherwise => Err(format!("expected Word but got {:?}", otherwise).into())
         }
     }
 
-    pub fn as_list(&self) -> Result<&List, Box<dyn std::error::Error>> {
+    pub fn as_list(&self) -> Result<ListRef, Box<dyn std::error::Error>> {
         match self {
             Self::List(l) => Ok(l),
             otherwise => Err(format!("expected List but got {:?}", otherwise).into())

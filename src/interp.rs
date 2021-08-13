@@ -1,4 +1,4 @@
-use crate::parser::{Expr, Word, ExprRef};
+use crate::parser::{Expr, Word, ExprRef, WordRef};
 use std::collections::HashMap;
 use std::str::{from_utf8};
 
@@ -24,9 +24,8 @@ impl Interpreter {
     }
 
     // TODO: this could take an iterator of exprs
-    pub fn eval(&'a mut self, expr: &'a Expr) -> Result<Expr, Box<dyn std::error::Error>> {
-        let expr_ref = expr.as_ref();
-        let expr_list = expr_ref.as_list()?;
+    pub fn eval(&'a mut self, expr: ExprRef<'a>) -> Result<Expr, Box<dyn std::error::Error>> {
+        let expr_list = expr.as_list()?;
         let mut exprs = expr_list.iter();
 
         let grabbed = grab_an_expr(&mut exprs)?;
@@ -38,13 +37,13 @@ impl Interpreter {
         })
     }
 
-    pub fn call_builtin(&'a mut self, name: &'a Word, exprs: &'a [Expr]) -> EvalResult<'a> {
-        match name.as_slice() {
+    pub fn call_builtin(&'a mut self, name: WordRef<'a>, exprs: &'a [Expr]) -> EvalResult<'a> {
+        match name {
             b".define" => builtins::define(self, exprs),
             b".@" => builtins::dedef(self, exprs),
             b".print-ascii" => builtins::print_ascii(self, exprs),
             b".exec-all" => builtins::exec_all(self, exprs),
-            b".call" => builtins::call(self, exprs),
+            b".chain" => builtins::chain(self, exprs),
             _ => return Err(format!("builtin {} not found", from_utf8(name).unwrap()).into()),
         }
     }
@@ -53,6 +52,7 @@ impl Interpreter {
 mod builtins {
     use super::*;
     use core::slice::SlicePattern;
+    use std::collections::VecDeque;
 
     // returns the word defined
     pub fn define(interp: &'a mut Interpreter, exprs: &'a [Expr]) -> EvalResult<'a> {
@@ -77,16 +77,20 @@ mod builtins {
     pub fn exec_all(interp: &'a mut Interpreter, exprs: &'a [Expr]) -> EvalResult<'a> {
         let (last, init) = exprs.split_last().ok_or("tried to exec-all empty expr list")?;
         for expr in init {
-            interp.eval(expr)?;
+            interp.eval(expr.as_ref())?;
         }
-        Ok(EvalOutput::Owned(interp.eval(last)?))
+        Ok(EvalOutput::Owned(interp.eval(last.as_ref())?))
     }
 
-    pub fn call(interp: &'a mut Interpreter, exprs: &'a [Expr]) -> EvalResult<'a> {
-        if let [Expr::Word(name), Expr::List(args)] = exprs.as_slice() {
-            interp.call_builtin(name, args)
-        } else {
-            Err(format!("invalid arguments for call: {:?}", exprs).into())
+    // TODO: should the arg stack just be global?
+    pub fn chain(interp: &'a mut Interpreter, exprs: &'a [Expr]) -> EvalResult<'a> {
+        let mut args = vec![];
+        let (last, init) = exprs.split_last().ok_or("tried to chain an empty list")?;
+        for expr in init {
+            let res = match expr {
+                Expr::Word(w) => interp.eval(ExprRef::List(&[w])),
+                Expr::List(l) => interp.eval(ExprRef::List(&l)),
+            }?;
         }
     }
 
