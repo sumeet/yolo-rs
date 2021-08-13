@@ -1,78 +1,101 @@
-use crate::parser::{Expr, Word, List};
+use crate::parser::{Expr, Word, List, ExprRef};
 use std::collections::HashMap;
 use std::str::{from_utf8};
 
-pub type EvalResult = Result<Expr, Box<dyn std::error::Error>>;
+#[derive(Debug)]
+pub enum EvalOutput<'a> {
+    Ref(ExprRef<'a>),
+    Owned(Expr),
+}
+pub type EvalResult<'a> = Result<EvalOutput<'a>, Box<dyn std::error::Error>>;
 
 pub struct Interpreter {
     storage: HashMap<Word, Expr>,
 }
 
-fn grab_an_expr(expr: &mut Expr) -> EvalResult {
-    Ok(expr.as_mut_list()?.pop_front().ok_or("tried to pop an expr from an empty list")?)
-}
-
-fn grab_a_word(expr: &mut Expr) -> Result<Word, Box<dyn std::error::Error>> {
-    grab_an_expr(expr)?.into_word()
-}
-
-fn grab_a_list(expr: &mut Expr) -> Result<List, Box<dyn std::error::Error>> {
-    grab_an_expr(expr)?.into_list()
+fn grab_an_expr(exprs: &'a mut impl Iterator<Item = &'a Expr>) -> Result<ExprRef<'a>, Box<dyn std::error::Error>> {
+    Ok(exprs.next().ok_or("tried to pop an expr from an empty list")?.as_ref())
 }
 
 impl Interpreter {
     pub fn new() -> Self {
-        Self { storage: HashMap::new()}
+        Self { storage: HashMap::new(), arg_stack: vec![] }
     }
 
-    pub fn eval(&mut self, mut expr: Expr) -> EvalResult {
-        let w = grab_a_word(&mut expr)?;
-        match w.as_slice() {
-            b"define" => builtins::define(self, expr),
-            b"@" => builtins::dedef(self, expr),
-            b"print-ascii" => builtins::print_ascii(self, expr),
+    // TODO: this could take an iterator of exprs
+    pub fn eval(&'a mut self, expr: &'a Expr) -> Result<Expr, Box<dyn std::error::Error>> {
+        let expr_ref = expr.as_ref();
+        let expr_list = expr_ref.as_list()?;
+        let mut exprs = expr_list.iter();
+
+        let grabbed = grab_an_expr(&mut exprs)?;
+        let name = grabbed.as_word()?;
+        let rest = &expr_list[1..];
+        Ok(match self.call_builtin(name, rest)? {
+            EvalOutput::Ref(r) => r.to_owned(),
+            EvalOutput::Owned(owned) => owned,
+        })
+    }
+
+    pub fn call_builtin(&'a mut self, name: &'a Word, exprs: &'a [Expr]) -> EvalResult<'a> {
+        match name.as_slice() {
+            b".define" => builtins::define(self, exprs),
+            b".@" => builtins::dedef(self, exprs),
+            b".print-ascii" => builtins::print_ascii(self, exprs),
             // TODO: should .block return the last instead of returning all?
-            b".block" => builtins::eval_all(self, expr),
-            b"." => builtins::apply(self, expr),
-            _ => return Err(format!("builtin {} not found", from_utf8(&w).unwrap()).into()),
+            b".namespace-exec" => builtins::namespace_exec_all(self, exprs),
+            b".call" => builtins::call(self, exprs),
+            _ => return Err(format!("builtin {} not found", from_utf8(name).unwrap()).into()),
         }
     }
 }
 
 mod builtins {
     use super::*;
+    use core::slice::SlicePattern;
 
     // returns the word defined
-    pub fn define(interp: &mut Interpreter, mut expr: Expr) -> EvalResult {
-        let name = grab_a_word(&mut expr)?;
-        let value = grab_an_expr(&mut expr)?;
-        interp.storage.insert(name.clone(), value);
-        Ok(Expr::Word(name))
+    pub fn define(interp: &'a mut Interpreter, exprs: &'a [Expr]) -> EvalResult<'a> {
+        if let [Expr::Word(name), to] = exprs.as_slice() {
+            interp.storage.insert(name.clone(), to.clone());
+            Ok(EvalOutput::Ref(ExprRef::Word(name)))
+        } else {
+            Err(format!("invalid arguments for define: {:?}", exprs).into())
+        }
     }
 
-    pub fn dedef(interp: &mut Interpreter, mut expr: Expr) -> EvalResult {
-        let name = grab_a_word(&mut expr)?;
-        let found = interp.storage.get(&name)
-            .ok_or_else(|| format!("def {:?} not found", from_utf8(&name).unwrap()))?;
-        Ok(found.clone())
+    pub fn dedef(interp: &'a mut Interpreter, exprs: &'a [Expr]) -> EvalResult<'a> {
+        if let [Expr::Word(name)] = exprs.as_slice() {
+            let value = interp.storage.get(name)
+                .ok_or_else(|| format!("name {:?} not found", from_utf8(name).unwrap()))?;
+            Ok(EvalOutput::Ref(value.as_ref()))
+        } else {
+            Err(format!("invalid arguments for dedef: {:?}", exprs).into())
+        }
     }
 
-    pub fn eval_all(interp: &mut Interpreter, expr: Expr) -> EvalResult {
-        Ok(Expr::List(expr.into_list()?.into_iter().map(|expr| {
-            interp.eval(expr)
-        }).collect::<Result<_, _>>()?))
+    pub fn namespace_exec_all(interp: &'a mut Interpreter, exprs: &'a [Expr]) -> EvalResult<'a> {
+        let (last, init) = exprs.split_last().ok_or("tried to namespace exec empty expr list")?;
+        for expr in init {
+            interp.eval(expr);
+        }
+        Ok(EvalOutput::Owned(interp.eval(last)?))
     }
 
-    pub fn apply(interp: &mut Interpreter, mut expr: Expr) -> EvalResult {
-        let func_to_apply = grab_a_word(&mut expr)?;
-        let mut args = eval_all(interp, expr)?.into_list()?;
-        args.push_front(Expr::Word(func_to_apply));
-        interp.eval(Expr::List(args))
+    pub fn call(interp: &'a mut Interpreter, exprs: &'a [Expr]) -> EvalResult<'a> {
+        if let [Expr::Word(name), Expr::List(args)] = exprs.as_slice() {
+            interp.call_builtin(name, args)
+        } else {
+            Err(format!("invalid arguments for call: {:?}", exprs).into())
+        }
     }
 
-    pub fn print_ascii(_: &mut Interpreter, mut expr: Expr) -> EvalResult {
-        let w = grab_a_word(&mut expr)?;
-        println!("{}", from_utf8(&w)?);
-        Ok(Expr::empty_list())
+    pub fn print_ascii(_: &'a mut Interpreter, exprs: &'a [Expr]) -> EvalResult<'a> {
+        if let [Expr::Word(word)] = exprs.as_slice() {
+            println!("{}", from_utf8(word)?);
+            Ok(EvalOutput::Ref(ExprRef::Word(word)))
+        } else {
+            Err(format!("invalid arguments for print_ascii: {:?}", exprs).into())
+        }
     }
 }
