@@ -1,6 +1,7 @@
 #![feature(box_syntax)]
 #![feature(slice_pattern)]
 #![feature(in_band_lifetimes)]
+#![feature(generators)]
 
 use crate::interp::Interpreter;
 
@@ -25,14 +26,14 @@ r#".exec-all
 (.chain (@. my-guy) .print-ascii)
 "#;
     println!("{}", code);
-    let expr = parser::parse_exprs(&mut code.as_bytes().into_iter().copied());
+    let exprs = parser::parse_exprs(&mut code.as_bytes().into_iter().copied());
 
     println!("--- PARSED ---");
-    println!("{:?}", expr);
+    println!("{:?}", exprs);
 
     let mut interpreter = Interpreter::new();
     println!("--- EVAL ---");
-    let res = interpreter.eval(expr.as_ref()).unwrap();
+    let res = interpreter.eval(exprs.iter().map(|expr| expr.as_ref())).unwrap();
     println!("--- RESULT ---");
     println!("{:?}", res);
 }

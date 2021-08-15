@@ -49,12 +49,12 @@ impl Expr {
     }
 }
 
-pub fn parse_exprs(cs: &mut impl Iterator<Item = u8>) -> Expr {
+pub fn parse_exprs(cs: &mut impl Iterator<Item = u8>) -> List {
     parse_exprs_rec(cs, false)
 }
 
 // TODO: this could be an iterator of Exprs?
-fn parse_exprs_rec(cs: &mut impl Iterator<Item = u8>, is_inside_list: bool) -> Expr {
+fn parse_exprs_rec(cs: &mut impl Iterator<Item = u8>, is_inside_list: bool) -> List {
     let mut exprs = List::new();
     let mut current_string : Option<Word> = None;
     loop {
@@ -62,7 +62,7 @@ fn parse_exprs_rec(cs: &mut impl Iterator<Item = u8>, is_inside_list: bool) -> E
             Some(c) => {
                 match c {
                     b'(' => {
-                        exprs.push(parse_exprs_rec(cs, true));
+                        exprs.push(Expr::List(parse_exprs_rec(cs, true)));
                     }
                     b')' => {
                         if is_inside_list {
@@ -94,5 +94,5 @@ fn parse_exprs_rec(cs: &mut impl Iterator<Item = u8>, is_inside_list: bool) -> E
             }
         }
     }
-    Expr::List(exprs)
+    exprs
 }
