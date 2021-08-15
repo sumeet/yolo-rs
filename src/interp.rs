@@ -24,21 +24,21 @@ impl Interpreter {
         Self { storage: HashMap::new() }
     }
 
-    pub fn eval(&'_ mut self, mut exprs: impl Iterator<Item = ExprRef<'a>> + 'a)  -> Result<Expr, Box<dyn std::error::Error>> {
+    pub fn eval(&'a mut self, mut exprs: impl Iterator<Item = ExprRef<'a>> + 'a)  -> Result<Expr, Box<dyn std::error::Error>> {
         let grabbed = grab_an_expr(&mut exprs)?;
         let name = grabbed.as_word()?.to_owned();
-        let x = self.call_builtin(name.as_ref(), exprs)?;
+        let x = self.call_builtin(&name, exprs)?;
         Ok(match x {
            EvalOutput::Ref(r) => r.to_owned(),
            EvalOutput::Owned(owned) => owned,
         })
     }
 
-    pub fn call_builtin(&'_ mut self, name: WordRef<'_>, exprs: impl Iterator<Item = ExprRef<'a>>) -> EvalResult<'_> {
+    pub fn call_builtin(&'a mut self, name: WordRef<'b>, exprs: impl Iterator<Item = ExprRef<'a>> + 'a) -> EvalResult<'a> {
         match name {
-            // b".define" => builtins::define(self, exprs),
-            // b".@" => builtins::dedef(self, exprs),
-            // b".print-ascii" => builtins::print_ascii(self, exprs),
+            b".define" => builtins::define(self, exprs),
+            b".@" => builtins::dedef(self, exprs),
+            b".print-ascii" => builtins::print_ascii(self, exprs),
             // b".exec-all" => builtins::exec_all(self, exprs),
             // b".chain" => builtins::chain(self, exprs),
             _ => return Err(format!("builtin {} not found", from_utf8(name).unwrap()).into()),
@@ -62,7 +62,7 @@ mod builtins {
         }
     }
 
-    pub fn dedef(interp: &'a mut Interpreter, exprs: impl Iterator<Item = ExprRef<'a>>) -> EvalResult<'a> {
+    pub fn dedef(interp: &'a mut Interpreter, exprs: impl Iterator<Item = ExprRef<'a>> + 'a) -> EvalResult<'a> {
         // TODO: this can be done without allocations...
         let exprs = exprs.collect_vec();
         if let [ExprRef::Word(name)] = exprs.as_slice() {
