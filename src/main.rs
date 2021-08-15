@@ -22,7 +22,6 @@ fn main() {
 r#".exec-all
 (.define my-guy hello)
 (.print-ascii my-guy)
-(.call .print-ascii (my-guy))
 (.chain (@. my-guy) .print-ascii)
 "#;
     println!("{}", code);

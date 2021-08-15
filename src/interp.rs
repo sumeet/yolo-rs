@@ -39,7 +39,7 @@ impl Interpreter {
             b".define" => builtins::define(self, exprs),
             b".@" => builtins::dedef(self, exprs),
             b".print-ascii" => builtins::print_ascii(self, exprs),
-            // b".exec-all" => builtins::exec_all(self, exprs),
+            b".exec-all" => builtins::exec_all(self, exprs),
             // b".chain" => builtins::chain(self, exprs),
             _ => return Err(format!("builtin {} not found", from_utf8(name).unwrap()).into()),
         }
@@ -76,10 +76,13 @@ mod builtins {
 
     pub fn exec_all(interp: &'a mut Interpreter, mut exprs: impl Iterator<Item = ExprRef<'a>>) -> EvalResult<'a> {
         let first = exprs.next().ok_or("tried to exec-all empty expr list")?;
-        let mut res = interp.eval(first.as_list()?.iter().map(|expr| expr.as_ref()))?;
-        for expr in exprs {
-            res = interp.eval(expr.as_list()?.iter().map(|expr| expr.as_ref()))?;
-        }
+        let list = first.as_list()?.iter().map(|expr| expr.as_ref()).collect_vec();
+        // we just have to allocate and collect here otherwise the type of the iterator recurses with eval()
+        let mut res = interp.eval(list.into_iter())?;
+         for expr in exprs {
+             let list = expr.as_list()?.iter().map(|expr| expr.as_ref()).collect_vec();
+             res = interp.eval(list.into_iter())?;
+         }
         Ok(EvalOutput::Owned(res))
     }
 
