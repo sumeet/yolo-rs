@@ -18,10 +18,6 @@ impl Interpreter {
         Self { storage: HashMap::new(), stack: vec![] }
     }
 
-    pub fn pop_expr(&mut self) -> anyhow::Result<Expr> {
-        self.stack.pop().ok_or(anyhow!("stack was empty"))
-    }
-
     pub fn eval(&'a mut self, mut exprs: impl Iterator<Item = Expr>)  -> anyhow::Result<()> {
         let grabbed = grab_an_expr(&mut exprs)?;
         let name = grabbed.into_word()?;
@@ -36,6 +32,10 @@ impl Interpreter {
             return Ok(self.eval(list.into_iter())?)
         }
         Ok(self.call_builtin(&name)?)
+    }
+
+    pub fn pop_expr(&mut self) -> anyhow::Result<Expr> {
+        self.stack.pop().ok_or(anyhow!("stack was empty"))
     }
 
     pub fn call_builtin(&'a mut self, name: WordRef<'b>) -> anyhow::Result<()> {

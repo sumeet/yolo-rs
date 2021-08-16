@@ -46,28 +46,12 @@ pub enum ExprRef<'a> {
 }
 
 impl ExprRef<'_> {
-    // pub fn to_owned(&self) -> Expr {
-    //     match self {
-    //         ExprRef::Word(w) => {
-    //             Expr::Word(w.to_vec())
-    //         },
-    //         ExprRef::List(l) => Expr::List(l.to_vec()),
-    //     }
-    // }
-    //
     pub fn as_word(&self) -> anyhow::Result<WordRef> {
         match self {
             Self::Word(w) => Ok(w),
             otherwise => Err(anyhow!("expected Word but got {:?}", otherwise))
         }
     }
-
-    // pub fn as_list(&self) -> anyhow::Result<ListRef> {
-    //     match self {
-    //         Self::List(l) => Ok(l),
-    //         otherwise => Err(anyhow!("expected List but got {:?}", otherwise))
-    //     }
-    // }
 }
 
 impl Expr {
