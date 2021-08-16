@@ -18,7 +18,7 @@ impl Interpreter {
         Self { storage: HashMap::new(), stack: vec![] }
     }
 
-    pub fn eval(&'a mut self, mut exprs: impl Iterator<Item = Expr>)  -> anyhow::Result<()> {
+    pub fn eval(&mut self, mut exprs: impl Iterator<Item = Expr>)  -> anyhow::Result<()> {
         let grabbed = grab_an_expr(&mut exprs)?;
         let name = grabbed.into_word()?;
         self.stack.extend(exprs);
@@ -38,7 +38,7 @@ impl Interpreter {
         self.stack.pop().ok_or(anyhow!("stack was empty"))
     }
 
-    pub fn call_builtin(&'a mut self, name: WordRef<'b>) -> anyhow::Result<()> {
+    pub fn call_builtin(&mut self, name: WordRef<'b>) -> anyhow::Result<()> {
         match name {
             b"." => builtins::exec_all(self),
             b".define" => builtins::define(self),
@@ -106,7 +106,7 @@ mod builtins {
         Ok(())
     }
 
-    pub fn plus_unsigned(interp: &'a mut Interpreter) -> anyhow::Result<()> {
+    pub fn plus_unsigned(interp: &mut Interpreter) -> anyhow::Result<()> {
         let rhs = interp.pop_expr()?.into_word()?;
         let lhs = interp.pop_expr()?.into_word()?;
         let sum = BigUint::from_bytes_le(&lhs) + BigUint::from_bytes_le(&rhs);
@@ -114,7 +114,7 @@ mod builtins {
         Ok(())
     }
 
-    pub fn lt_unsigned(interp: &'a mut Interpreter) -> anyhow::Result<()> {
+    pub fn lt_unsigned(interp: &mut Interpreter) -> anyhow::Result<()> {
         let rhs = interp.pop_expr()?.into_word()?;
         let lhs = interp.pop_expr()?.into_word()?;
         let bool = (BigUint::from_bytes_le(&lhs) < BigUint::from_bytes_le(&rhs)) as u8;
@@ -122,7 +122,7 @@ mod builtins {
         Ok(())
     }
 
-    pub fn gt_unsigned(interp: &'a mut Interpreter) -> anyhow::Result<()> {
+    pub fn gt_unsigned(interp: &mut Interpreter) -> anyhow::Result<()> {
         let rhs = interp.pop_expr()?.into_word()?;
         let lhs = interp.pop_expr()?.into_word()?;
         let bool = (BigUint::from_bytes_le(&lhs) > BigUint::from_bytes_le(&rhs)) as u8;
@@ -130,7 +130,7 @@ mod builtins {
         Ok(())
     }
 
-    pub fn r#while(interp: &'a mut Interpreter) -> anyhow::Result<()> {
+    pub fn r#while(interp: &mut Interpreter) -> anyhow::Result<()> {
         let block = interp.pop_expr()?.into_list()?;
         // cond needs to push a boolean onto the stack
         let cond = interp.pop_expr()?.into_list()?;
@@ -150,7 +150,7 @@ mod builtins {
         Ok(())
     }
 
-    pub fn append(interp: &'a mut Interpreter) -> anyhow::Result<()> {
+    pub fn append(interp: &mut Interpreter) -> anyhow::Result<()> {
         let to_append = interp.pop_expr()?;
         let mut list = interp.pop_expr()?.into_list()?;
         list.push(to_append);
