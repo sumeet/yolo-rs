@@ -22,7 +22,8 @@ fn main() {
 r#".exec-all
 (.chain (.temp.u64 0) (.define counter))
 (.define .u-incr (.chain (.temp.u64 1) (.append (.+-u))))
-(.chain (.@ counter) (.u-incr) (.define counter))
+(.u-incr 0)
+(.chain (.@ counter) (.temp.print-u64))
 "#;
     println!("{}", code);
     let exprs = parser::parse_exprs(&mut code.as_bytes().into_iter().copied());
@@ -32,7 +33,7 @@ r#".exec-all
 
     let mut interpreter = Interpreter::new();
     println!("--- EVAL ---");
-    let res = interpreter.eval(exprs.iter().map(|expr| expr.as_ref())).unwrap();
+    let res = interpreter.eval(Box::new(exprs.iter().map(|expr| expr.as_ref()))).unwrap();
     println!("--- RESULT ---");
     println!("{:?}", res);
 }

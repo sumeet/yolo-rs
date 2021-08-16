@@ -49,6 +49,13 @@ impl Expr {
             Expr::List(l) => ExprRef::List(l),
         }
     }
+
+    pub fn into_list(self) -> anyhow::Result<List> {
+        match self {
+            Expr::List(l) => Ok(l),
+            _ => Err(anyhow!("expected List but got {:?}", self))
+        }
+    }
 }
 
 pub fn parse_exprs(cs: &mut impl Iterator<Item = u8>) -> List {

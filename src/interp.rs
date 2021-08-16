@@ -25,12 +25,21 @@ impl Interpreter {
         Self { storage: HashMap::new() }
     }
 
-    pub fn eval(&'a mut self, mut exprs: impl Iterator<Item = ExprRef<'a>> + 'a)  -> anyhow::Result<Expr> {
+    pub fn eval(&'a mut self, mut exprs: Box<dyn Iterator<Item = ExprRef<'a>> + 'a>)  -> anyhow::Result<Expr> {
         let grabbed = grab_an_expr(&mut exprs)?;
         let name = grabbed.as_word()?.to_owned();
-        Ok(match self.call_builtin(&name, exprs)? {
-           EvalOutput::Ref(r) => r.to_owned(),
-           EvalOutput::Owned(owned) => owned,
+        let definition = self.storage.get(&name)
+            .map(|expr| expr.to_owned())
+            .ok_or_else(|| anyhow!("{} not found", from_utf8(&name).unwrap()));
+        if let Ok(definition) = definition {
+            let mut list = definition.into_list()?;
+            list.push(Expr::List(exprs.map(|expr| expr.to_owned()).collect()));
+            return Ok(self.eval(Box::new(list.iter().map(|expr| expr.as_ref())))?)
+
+        }
+        Ok(match self.call_builtin(&name, exprs).unwrap() {
+            EvalOutput::Ref(r) => r.to_owned(),
+            EvalOutput::Owned(owned) => owned,
         })
     }
 
@@ -101,9 +110,9 @@ mod builtins {
     // the type for the iterator couldn't be computed
     pub fn exec_all(interp: &'a mut Interpreter, mut exprs: Box<dyn Iterator<Item = ExprRef<'a>> + 'a>) -> EvalResult<'a> {
         let first = exprs.next().ok_or_else(|| anyhow!("tried to exec-all empty expr list"))?;
-        let mut res = interp.eval(first.as_list()?.iter().map(|expr| expr.as_ref()))?;
+        let mut res = interp.eval(Box::new(first.as_list()?.iter().map(|expr| expr.as_ref())))?;
          for expr in exprs {
-             res = interp.eval(expr.as_list()?.iter().map(|expr| expr.as_ref()))?;
+             res = interp.eval(Box::new(expr.as_list()?.iter().map(|expr| expr.as_ref())))?;
          }
         Ok(EvalOutput::Owned(res))
     }
@@ -113,10 +122,10 @@ mod builtins {
     // the type for the iterator couldn't be computed
     pub fn chain(interp: &'a mut Interpreter, mut exprs: Box<dyn Iterator<Item = ExprRef<'a>> + 'a>) -> EvalResult<'a> {
         let first = exprs.next().ok_or_else(|| anyhow!("tried to chain an empty list"))?;
-        let mut args = interp.eval(first.as_list()?.iter().map(|expr| expr.as_ref()))?;
+        let mut args = interp.eval(Box::new(first.as_list()?.iter().map(|expr| expr.as_ref())))?;
         for next_to_evaluate in exprs {
             let next_to_evaluate = next_to_evaluate.as_list()?.iter().map(|expr| expr.as_ref());
-            args = interp.eval(next_to_evaluate.chain(once(args.as_ref())))?;
+            args = interp.eval(Box::new(next_to_evaluate.chain(once(args.as_ref()))))?;
         }
         Ok(EvalOutput::Owned(args))
     }
@@ -171,7 +180,7 @@ mod builtins {
         if let [ExprRef::List(cond), ExprRef::List(block)] = exprs.as_slice() {
             let should_continue = |interp: &mut Interpreter| -> anyhow::Result<_> {
                 let exprs_to_eval = cond.iter().map(|expr| expr.as_ref());
-                let result = interp.eval(exprs_to_eval)?;
+                let result = interp.eval(Box::new(exprs_to_eval))?;
                 let result_ref = result.as_ref();
                 let b = is_truthy(result_ref.as_word()?);
                 Ok((result, b))
@@ -182,7 +191,7 @@ mod builtins {
             }
 
             let compute_block = |interp: &mut Interpreter| -> anyhow::Result<_> {
-                interp.eval(block.iter().map(|expr| expr.as_ref()))
+                interp.eval(Box::new(block.iter().map(|expr| expr.as_ref())))
             };
             let mut result = compute_block(interp)?;
             while should_continue(interp)?.1 {
