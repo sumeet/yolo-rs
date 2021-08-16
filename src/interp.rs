@@ -38,6 +38,7 @@ impl Interpreter {
         match name {
             b".define" => builtins::define(self, exprs),
             b".@" => builtins::dedef(self, exprs),
+            b".+-u" => builtins::plus_unsigned(self, exprs),
             b".>-u" => builtins::gt_unsigned(self, exprs),
             b".<-u" => builtins::lt_unsigned(self, exprs),
             b".print-ascii" => builtins::print_ascii(self, exprs),
@@ -46,13 +47,13 @@ impl Interpreter {
             b".while" => builtins::r#while(self, Box::new(exprs)),
 
             // temp functions until i get bootstrapped
-            b"temp.u64" => {
+            b".temp.u64" => {
                 let w = exprs.next();
                 let w = w.ok_or("expected a word")?;
                 let w = w.as_word()?;
                 Ok(EvalOutput::Owned(Expr::Word(u64::from_str(from_utf8(&w)?)?.to_ne_bytes().to_vec())))
             }
-            b"temp.print-u64" => {
+            b".temp.print-u64" => {
                 let w = exprs.next();
                 let expr_ref = w.ok_or("expected a word")?;
                 let w = expr_ref.as_word()?;
@@ -125,6 +126,17 @@ mod builtins {
             Ok(EvalOutput::Ref(ExprRef::Word(word)))
         } else {
             Err(format!("invalid arguments for print_ascii: {:?}", exprs).into())
+        }
+    }
+
+    pub fn plus_unsigned(_interp: &'a mut Interpreter, exprs: impl Iterator<Item = ExprRef<'a>>) -> EvalResult<'a> {
+        // TODO: this can be done without allocations...
+        let exprs = exprs.collect_vec();
+        if let [ExprRef::Word(lhs), ExprRef::Word(rhs)] = exprs.as_slice() {
+            let sum = BigUint::from_bytes_le(lhs) + BigUint::from_bytes_le(rhs);
+            Ok(EvalOutput::Owned(Expr::Word(sum.to_bytes_le())))
+        } else {
+            Err(format!("invalid arguments for plus_unsigned: {:?}", exprs).into())
         }
     }
 
