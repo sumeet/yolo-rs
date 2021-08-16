@@ -19,9 +19,14 @@ fn main() {
 // wouldn't be able to call it directly because none of these funcs are type checked
 //
 // another idea, the package icon can go on the item instead of an icon for the function itself
-r#".exec-all (
-    (.print-ascii hello)
-    (.print-ascii goodbye)
+r#". (
+    (.define .u-incr (. (
+        (.temp.u 1)
+        (.+-u)
+    )))
+    (.temp.u 2)
+    (.u-incr)
+    (.temp.print-u)
 )
 "#;
     println!("{}", code);
@@ -32,7 +37,5 @@ r#".exec-all (
 
     let mut interpreter = Interpreter::new();
     println!("--- EVAL ---");
-    let res = interpreter.eval(exprs.into_iter()).unwrap();
-    println!("--- RESULT ---");
-    println!("{:?}", res);
+    interpreter.eval(exprs.into_iter()).unwrap();
 }

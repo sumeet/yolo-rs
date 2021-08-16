@@ -2,7 +2,7 @@ use crate::parser::{Expr, Word, WordRef};
 use std::collections::HashMap;
 use std::str::{from_utf8, FromStr};
 use anyhow::anyhow;
-use std::convert::TryInto;
+use num_bigint::BigUint;
 
 pub struct Interpreter {
     storage: HashMap<Word, Expr>,
@@ -40,31 +40,31 @@ impl Interpreter {
 
     pub fn call_builtin(&'a mut self, name: WordRef<'b>) -> anyhow::Result<()> {
         match name {
+            b"." => builtins::exec_all(self),
             b".define" => builtins::define(self),
             b".@" => builtins::dedef(self),
             b".+-u" => builtins::plus_unsigned(self),
             b".>-u" => builtins::gt_unsigned(self),
             b".<-u" => builtins::lt_unsigned(self),
-            b".print-ascii" => builtins::print_ascii(self),
-            b".exec-all" => builtins::exec_all(self),
+            b".write" => builtins::write(self),
             b".while" => builtins::r#while(self),
 
             // expr stuff
             b".append" => builtins::append(self),
 
             // temp functions until i get bootstrapped
-            b".temp.u64" => {
+            b".temp.u" => {
                 let w = self.stack.pop();
                 let w = w.ok_or_else(|| anyhow!("expected a word"))?;
                 let w = w.into_word()?;
-                self.stack.push(Expr::Word(u64::from_str(from_utf8(&w)?)?.to_ne_bytes().to_vec()));
+                self.stack.push(Expr::Word(BigUint::from_str(from_utf8(&w)?)?.to_bytes_le().to_vec()));
                 Ok(())
             }
-            b".temp.print-u64" => {
+            b".temp.print-u" => {
                 let w = self.stack.pop();
                 let w = w.ok_or_else(|| anyhow!("expected a word"))?;
                 let w = w.into_word()?;
-                println!("{}", u64::from_ne_bytes(w.try_into().unwrap()));
+                println!("{}", BigUint::from_bytes_le(&w));
                 Ok(())
             }
             _ => Err(anyhow!("builtin {} not found", from_utf8(name).unwrap())),
@@ -75,10 +75,11 @@ impl Interpreter {
 mod builtins {
     use super::*;
     use num_bigint::BigUint;
+    use std::io::Write;
 
     pub fn define(interp: &mut Interpreter) -> anyhow::Result<()> {
-        let w = interp.pop_expr()?.into_word()?;
         let definition = interp.pop_expr()?;
+        let w = interp.pop_expr()?.into_word()?;
         interp.storage.insert(w, definition);
         Ok(())
     }
@@ -97,9 +98,11 @@ mod builtins {
         Ok(())
     }
 
-    pub fn print_ascii(interp: &mut Interpreter) -> anyhow::Result<()> {
+    pub fn write(interp: &mut Interpreter) -> anyhow::Result<()> {
         let w = interp.pop_expr()?.into_word()?;
-        println!("{}", from_utf8(&w)?);
+        let mut out = std::io::stdout();
+        out.write_all(&w)?;
+        out.flush()?;
         Ok(())
     }
 
