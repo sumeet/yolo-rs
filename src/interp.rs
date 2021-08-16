@@ -38,9 +38,12 @@ impl Interpreter {
         match name {
             b".define" => builtins::define(self, exprs),
             b".@" => builtins::dedef(self, exprs),
+            b".>-u" => builtins::gt_unsigned(self, exprs),
+            b".<-u" => builtins::lt_unsigned(self, exprs),
             b".print-ascii" => builtins::print_ascii(self, exprs),
             b".exec-all" => builtins::exec_all(self, Box::new(exprs)),
             b".chain" => builtins::chain(self, Box::new(exprs)),
+            b".while" => builtins::r#while(self, Box::new(exprs)),
 
             // temp functions until i get bootstrapped
             b"temp.u64" => {
@@ -64,6 +67,7 @@ impl Interpreter {
 mod builtins {
     use super::*;
     use itertools::Itertools;
+    use num_bigint::BigUint;
 
     // returns the word defined
     pub fn define(interp: &'a mut Interpreter, exprs: impl Iterator<Item = ExprRef<'a>>) -> EvalResult<'a> {
@@ -123,4 +127,59 @@ mod builtins {
             Err(format!("invalid arguments for print_ascii: {:?}", exprs).into())
         }
     }
+
+    pub fn lt_unsigned(_interp: &'a mut Interpreter, exprs: impl Iterator<Item = ExprRef<'a>>) -> EvalResult<'a> {
+        // TODO: this can be done without allocations...
+        let exprs = exprs.collect_vec();
+        if let [ExprRef::Word(lhs), ExprRef::Word(rhs)] = exprs.as_slice() {
+            let bool = (BigUint::from_bytes_le(lhs) < BigUint::from_bytes_le(rhs)) as u8;
+            Ok(EvalOutput::Owned(Expr::Word(vec![bool])))
+        } else {
+            Err(format!("invalid arguments for gt: {:?}", exprs).into())
+        }
+    }
+
+    pub fn gt_unsigned(_interp: &'a mut Interpreter, exprs: impl Iterator<Item = ExprRef<'a>>) -> EvalResult<'a> {
+        // TODO: this can be done without allocations...
+        let exprs = exprs.collect_vec();
+        if let [ExprRef::Word(lhs), ExprRef::Word(rhs)] = exprs.as_slice() {
+            let bool = (BigUint::from_bytes_le(lhs) > BigUint::from_bytes_le(rhs)) as u8;
+            Ok(EvalOutput::Owned(Expr::Word(vec![bool])))
+        } else {
+            Err(format!("invalid arguments for gt: {:?}", exprs).into())
+        }
+    }
+
+    pub fn r#while(interp: &'a mut Interpreter, exprs: Box<dyn Iterator<Item = ExprRef<'a>> + 'a>) -> EvalResult<'a> {
+        // TODO: this can be done without allocations...
+        let exprs = exprs.collect_vec();
+        if let [ExprRef::List(cond), ExprRef::List(block)] = exprs.as_slice() {
+            let should_continue = |interp: &mut Interpreter| -> Result<_, Box<dyn std::error::Error>> {
+                let exprs_to_eval = cond.iter().map(|expr| expr.as_ref());
+                let result = interp.eval(exprs_to_eval)?;
+                let result_ref = result.as_ref();
+                let b = is_truthy(result_ref.as_word()?);
+                Ok((result, b))
+            };
+            let (condition_result, b) = should_continue(interp)?;
+            if !b {
+                return Ok(EvalOutput::Owned(condition_result))
+            }
+
+            let compute_block = |interp: &mut Interpreter| -> Result<_, Box<dyn std::error::Error>> {
+                interp.eval(block.iter().map(|expr| expr.as_ref()))
+            };
+            let mut result = compute_block(interp)?;
+            while should_continue(interp)?.1 {
+                result = compute_block(interp)?;
+            }
+            Ok(EvalOutput::Owned(result))
+        } else {
+            Err(format!("invalid arguments for gt: {:?}", exprs).into())
+        }
+    }
+}
+
+fn is_truthy(w: WordRef) -> bool {
+    w.iter().any(|&b| b != 0)
 }
