@@ -1,6 +1,6 @@
 use crate::parser::{Expr, Word, ExprRef, WordRef};
 use std::collections::HashMap;
-use std::str::{from_utf8};
+use std::str::{from_utf8, FromStr};
 use std::iter::once;
 
 #[derive(Debug)]
@@ -34,14 +34,29 @@ impl Interpreter {
         })
     }
 
-    pub fn call_builtin(&'a mut self, name: WordRef<'b>, exprs: impl Iterator<Item = ExprRef<'a>> + 'a) -> EvalResult<'a> {
+    pub fn call_builtin(&'a mut self, name: WordRef<'b>, mut exprs: impl Iterator<Item = ExprRef<'a>> + 'a) -> EvalResult<'a> {
         match name {
             b".define" => builtins::define(self, exprs),
             b".@" => builtins::dedef(self, exprs),
             b".print-ascii" => builtins::print_ascii(self, exprs),
             b".exec-all" => builtins::exec_all(self, Box::new(exprs)),
             b".chain" => builtins::chain(self, Box::new(exprs)),
-            _ => return Err(format!("builtin {} not found", from_utf8(name).unwrap()).into()),
+
+            // temp functions until i get bootstrapped
+            b"temp.u64" => {
+                let w = exprs.next();
+                let w = w.ok_or("expected a word")?;
+                let w = w.as_word()?;
+                Ok(EvalOutput::Owned(Expr::Word(u64::from_str(from_utf8(&w)?)?.to_ne_bytes().to_vec())))
+            }
+            b"temp.print-u64" => {
+                let w = exprs.next();
+                let expr_ref = w.ok_or("expected a word")?;
+                let w = expr_ref.as_word()?;
+                println!("{}", u64::from_ne_bytes(w.try_into()?));
+                Ok(EvalOutput::Ref(expr_ref))
+            }
+            _ => Err(format!("builtin {} not found", from_utf8(name).unwrap()).into()),
         }
     }
 }

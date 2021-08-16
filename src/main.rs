@@ -23,6 +23,9 @@ r#".exec-all
 (.define my-guy hello)
 (.print-ascii my-guy)
 (.chain (.@ my-guy) (.print-ascii))
+
+(.chain (temp.u64 23) (.define my-num))
+(.chain (.@ my-num) (temp.print-u64))
 "#;
     println!("{}", code);
     let exprs = parser::parse_exprs(&mut code.as_bytes().into_iter().copied());
