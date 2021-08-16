@@ -1,14 +1,42 @@
 use anyhow::anyhow;
+use std::fmt::{Debug, Formatter};
+use std::str::from_utf8;
 
 pub type Word = Vec<u8>;
 pub type List = Vec<Expr>;
 pub type WordRef<'a> = &'a [u8];
 pub type ListRef<'a> = &'a [Expr];
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum Expr {
     Word(Word),
     List(List),
+}
+
+impl Debug for Expr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Expr::Word(w) => {
+                if let Ok(s) = from_utf8(w) {
+                    write!(f, "{}", s)?;
+                } else {
+                    write!(f, "{:?}", w)?;
+                }
+            }
+            Expr::List(l) => {
+                write!(f, "(")?;
+                if let Some((last, init)) = l.split_last() {
+                    for expr in init {
+                        expr.fmt(f)?;
+                        write!(f, " ")?;
+                    }
+                    last.fmt(f)?;
+                }
+                write!(f, ")")?;
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -18,15 +46,15 @@ pub enum ExprRef<'a> {
 }
 
 impl ExprRef<'_> {
-    pub fn to_owned(&self) -> Expr {
-        match self {
-            ExprRef::Word(w) => {
-                Expr::Word(w.to_vec())
-            },
-            ExprRef::List(l) => Expr::List(l.to_vec()),
-        }
-    }
-
+    // pub fn to_owned(&self) -> Expr {
+    //     match self {
+    //         ExprRef::Word(w) => {
+    //             Expr::Word(w.to_vec())
+    //         },
+    //         ExprRef::List(l) => Expr::List(l.to_vec()),
+    //     }
+    // }
+    //
     pub fn as_word(&self) -> anyhow::Result<WordRef> {
         match self {
             Self::Word(w) => Ok(w),
@@ -34,12 +62,12 @@ impl ExprRef<'_> {
         }
     }
 
-    pub fn as_list(&self) -> anyhow::Result<ListRef> {
-        match self {
-            Self::List(l) => Ok(l),
-            otherwise => Err(anyhow!("expected List but got {:?}", otherwise))
-        }
-    }
+    // pub fn as_list(&self) -> anyhow::Result<ListRef> {
+    //     match self {
+    //         Self::List(l) => Ok(l),
+    //         otherwise => Err(anyhow!("expected List but got {:?}", otherwise))
+    //     }
+    // }
 }
 
 impl Expr {
@@ -54,6 +82,13 @@ impl Expr {
         match self {
             Expr::List(l) => Ok(l),
             _ => Err(anyhow!("expected List but got {:?}", self))
+        }
+    }
+
+    pub fn into_word(self) -> anyhow::Result<Word> {
+        match self {
+            Expr::Word(w) => Ok(w),
+            _ => Err(anyhow!("expected Word but got {:?}", self))
         }
     }
 }

@@ -1,76 +1,71 @@
-use crate::parser::{Expr, Word, ExprRef, WordRef};
+use crate::parser::{Expr, Word, WordRef};
 use std::collections::HashMap;
 use std::str::{from_utf8, FromStr};
-use std::iter::once;
 use anyhow::anyhow;
-
-#[derive(Debug)]
-pub enum EvalOutput<'a> {
-    Ref(ExprRef<'a>),
-    Owned(Expr),
-}
-
-pub type EvalResult<'a> = anyhow::Result<EvalOutput<'a>>;
+use std::convert::TryInto;
 
 pub struct Interpreter {
     storage: HashMap<Word, Expr>,
+    stack: Vec<Expr>,
 }
 
-fn grab_an_expr(exprs: &'b mut impl Iterator<Item = ExprRef<'a>>) -> anyhow::Result<ExprRef<'a>> {
+fn grab_an_expr(exprs: &mut impl Iterator<Item = Expr>) -> anyhow::Result<Expr> {
     Ok(exprs.next().ok_or_else(|| anyhow!("tried to pop an expr from an empty list"))?)
 }
 
 impl Interpreter {
     pub fn new() -> Self {
-        Self { storage: HashMap::new() }
+        Self { storage: HashMap::new(), stack: vec![] }
     }
 
-    pub fn eval(&'a mut self, mut exprs: Box<dyn Iterator<Item = ExprRef<'a>> + 'a>)  -> anyhow::Result<Expr> {
+    pub fn pop_expr(&mut self) -> anyhow::Result<Expr> {
+        self.stack.pop().ok_or(anyhow!("stack was empty"))
+    }
+
+    pub fn eval(&'a mut self, mut exprs: impl Iterator<Item = Expr>)  -> anyhow::Result<()> {
         let grabbed = grab_an_expr(&mut exprs)?;
-        let name = grabbed.as_word()?.to_owned();
+        let name = grabbed.into_word()?;
+        self.stack.extend(exprs);
+
         let definition = self.storage.get(&name)
             .map(|expr| expr.to_owned())
             .ok_or_else(|| anyhow!("{} not found", from_utf8(&name).unwrap()));
-        if let Ok(definition) = definition {
-            let mut list = definition.into_list()?;
-            list.push(Expr::List(exprs.map(|expr| expr.to_owned()).collect()));
-            return Ok(self.eval(Box::new(list.iter().map(|expr| expr.as_ref())))?)
 
+        if let Ok(definition) = definition {
+            let list = definition.into_list()?;
+            return Ok(self.eval(list.into_iter())?)
         }
-        Ok(match self.call_builtin(&name, exprs).unwrap() {
-            EvalOutput::Ref(r) => r.to_owned(),
-            EvalOutput::Owned(owned) => owned,
-        })
+        Ok(self.call_builtin(&name)?)
     }
 
-    pub fn call_builtin(&'a mut self, name: WordRef<'b>, mut exprs: impl Iterator<Item = ExprRef<'a>> + 'a) -> EvalResult<'a> {
+    pub fn call_builtin(&'a mut self, name: WordRef<'b>) -> anyhow::Result<()> {
         match name {
-            b".define" => builtins::define(self, exprs),
-            b".@" => builtins::dedef(self, exprs),
-            b".+-u" => builtins::plus_unsigned(self, exprs),
-            b".>-u" => builtins::gt_unsigned(self, exprs),
-            b".<-u" => builtins::lt_unsigned(self, exprs),
-            b".print-ascii" => builtins::print_ascii(self, exprs),
-            b".exec-all" => builtins::exec_all(self, Box::new(exprs)),
-            b".chain" => builtins::chain(self, Box::new(exprs)),
-            b".while" => builtins::r#while(self, Box::new(exprs)),
+            b".define" => builtins::define(self),
+            b".@" => builtins::dedef(self),
+            b".+-u" => builtins::plus_unsigned(self),
+            b".>-u" => builtins::gt_unsigned(self),
+            b".<-u" => builtins::lt_unsigned(self),
+            b".print-ascii" => builtins::print_ascii(self),
+            b".exec-all" => builtins::exec_all(self),
+            b".while" => builtins::r#while(self),
 
             // expr stuff
-            b".append" => builtins::append(self, exprs),
+            b".append" => builtins::append(self),
 
             // temp functions until i get bootstrapped
             b".temp.u64" => {
-                let w = exprs.next();
+                let w = self.stack.pop();
                 let w = w.ok_or_else(|| anyhow!("expected a word"))?;
-                let w = w.as_word()?;
-                Ok(EvalOutput::Owned(Expr::Word(u64::from_str(from_utf8(&w)?)?.to_ne_bytes().to_vec())))
+                let w = w.into_word()?;
+                self.stack.push(Expr::Word(u64::from_str(from_utf8(&w)?)?.to_ne_bytes().to_vec()));
+                Ok(())
             }
             b".temp.print-u64" => {
-                let w = exprs.next();
-                let expr_ref = w.ok_or_else(|| anyhow!("expected a word"))?;
-                let w = expr_ref.as_word()?;
-                println!("{}", u64::from_ne_bytes(w.try_into()?));
-                Ok(EvalOutput::Ref(expr_ref))
+                let w = self.stack.pop();
+                let w = w.ok_or_else(|| anyhow!("expected a word"))?;
+                let w = w.into_word()?;
+                println!("{}", u64::from_ne_bytes(w.try_into().unwrap()));
+                Ok(())
             }
             _ => Err(anyhow!("builtin {} not found", from_utf8(name).unwrap())),
         }
@@ -79,140 +74,85 @@ impl Interpreter {
 
 mod builtins {
     use super::*;
-    use itertools::Itertools;
     use num_bigint::BigUint;
 
-    // returns the word defined
-    pub fn define(interp: &'a mut Interpreter, exprs: impl Iterator<Item = ExprRef<'a>>) -> EvalResult<'a> {
-        // TODO: this can be done without allocations...
-        let exprs = exprs.collect_vec();
-        if let [ExprRef::Word(name), to] = exprs.as_slice() {
-            interp.storage.insert(name.to_vec(), to.to_owned());
-            Ok(EvalOutput::Ref(ExprRef::Word(name)))
-        } else {
-            Err(anyhow!("invalid arguments for define: {:?}", exprs))
-        }
+    pub fn define(interp: &mut Interpreter) -> anyhow::Result<()> {
+        let w = interp.pop_expr()?.into_word()?;
+        let definition = interp.pop_expr()?;
+        interp.storage.insert(w, definition);
+        Ok(())
     }
 
-    pub fn dedef(interp: &'a mut Interpreter, exprs: impl Iterator<Item = ExprRef<'a>> + 'a) -> EvalResult<'a> {
-        // TODO: this can be done without allocations...
-        let exprs = exprs.collect_vec();
-        if let [ExprRef::Word(name)] = exprs.as_slice() {
-            let value = interp.storage.get(*name)
-                .ok_or_else(|| anyhow!("name {:?} not found", from_utf8(name).unwrap()))?;
-            Ok(EvalOutput::Ref(value.as_ref()))
-        } else {
-            Err(anyhow!("invalid arguments for dedef: {:?}", exprs))
-        }
+    pub fn dedef(interp: &mut Interpreter) -> anyhow::Result<()> {
+        let w = interp.pop_expr()?.into_word()?;
+        interp.storage.get(&w).ok_or_else(|| anyhow!("couldn't find {} in storage", from_utf8(&w).unwrap()))?;
+        Ok(())
     }
 
-    // this must take a Box because this func is mutually recursive with interp.eval(), otherwise
-    // the type for the iterator couldn't be computed
-    pub fn exec_all(interp: &'a mut Interpreter, mut exprs: Box<dyn Iterator<Item = ExprRef<'a>> + 'a>) -> EvalResult<'a> {
-        let first = exprs.next().ok_or_else(|| anyhow!("tried to exec-all empty expr list"))?;
-        let mut res = interp.eval(Box::new(first.as_list()?.iter().map(|expr| expr.as_ref())))?;
-         for expr in exprs {
-             res = interp.eval(Box::new(expr.as_list()?.iter().map(|expr| expr.as_ref())))?;
-         }
-        Ok(EvalOutput::Owned(res))
+    pub fn exec_all(interp: &mut Interpreter) -> anyhow::Result<()> {
+        let list = interp.pop_expr()?.into_list()?;
+        for el in list {
+            interp.eval(el.into_list()?.into_iter())?;
+        }
+        Ok(())
     }
 
-    // TODO: should the arg stack just be global?
-    // this must take a Box because this func is mutually recursive with interp.eval(), otherwise
-    // the type for the iterator couldn't be computed
-    pub fn chain(interp: &'a mut Interpreter, mut exprs: Box<dyn Iterator<Item = ExprRef<'a>> + 'a>) -> EvalResult<'a> {
-        let first = exprs.next().ok_or_else(|| anyhow!("tried to chain an empty list"))?;
-        let mut args = interp.eval(Box::new(first.as_list()?.iter().map(|expr| expr.as_ref())))?;
-        for next_to_evaluate in exprs {
-            let next_to_evaluate = next_to_evaluate.as_list()?.iter().map(|expr| expr.as_ref());
-            args = interp.eval(Box::new(next_to_evaluate.chain(once(args.as_ref()))))?;
-        }
-        Ok(EvalOutput::Owned(args))
+    pub fn print_ascii(interp: &mut Interpreter) -> anyhow::Result<()> {
+        let w = interp.pop_expr()?.into_word()?;
+        println!("{}", from_utf8(&w)?);
+        Ok(())
     }
 
-    pub fn print_ascii(_: &'a mut Interpreter, exprs: impl Iterator<Item = ExprRef<'a>>) -> EvalResult<'a> {
-        // TODO: this can be done without allocations...
-        let exprs = exprs.collect_vec();
-        if let [ExprRef::Word(word)] = exprs.as_slice() {
-            println!("{}", from_utf8(word)?);
-            Ok(EvalOutput::Ref(ExprRef::Word(word)))
-        } else {
-            Err(anyhow!("invalid arguments for print_ascii: {:?}", exprs))
-        }
+    pub fn plus_unsigned(interp: &'a mut Interpreter) -> anyhow::Result<()> {
+        let rhs = interp.pop_expr()?.into_word()?;
+        let lhs = interp.pop_expr()?.into_word()?;
+        let sum = BigUint::from_bytes_le(&lhs) + BigUint::from_bytes_le(&rhs);
+        interp.stack.push(Expr::Word(sum.to_bytes_le()));
+        Ok(())
     }
 
-    pub fn plus_unsigned(_interp: &'a mut Interpreter, exprs: impl Iterator<Item = ExprRef<'a>>) -> EvalResult<'a> {
-        // TODO: this can be done without allocations...
-        let exprs = exprs.collect_vec();
-        if let [ExprRef::Word(lhs), ExprRef::Word(rhs)] = exprs.as_slice() {
-            let sum = BigUint::from_bytes_le(lhs) + BigUint::from_bytes_le(rhs);
-            Ok(EvalOutput::Owned(Expr::Word(sum.to_bytes_le())))
-        } else {
-            Err(anyhow!("invalid arguments for plus_unsigned: {:?}", exprs))
-        }
+    pub fn lt_unsigned(interp: &'a mut Interpreter) -> anyhow::Result<()> {
+        let rhs = interp.pop_expr()?.into_word()?;
+        let lhs = interp.pop_expr()?.into_word()?;
+        let bool = (BigUint::from_bytes_le(&lhs) < BigUint::from_bytes_le(&rhs)) as u8;
+        interp.stack.push(Expr::Word(vec![bool]));
+        Ok(())
     }
 
-    pub fn lt_unsigned(_interp: &'a mut Interpreter, exprs: impl Iterator<Item = ExprRef<'a>>) -> EvalResult<'a> {
-        // TODO: this can be done without allocations...
-        let exprs = exprs.collect_vec();
-        if let [ExprRef::Word(lhs), ExprRef::Word(rhs)] = exprs.as_slice() {
-            let bool = (BigUint::from_bytes_le(lhs) < BigUint::from_bytes_le(rhs)) as u8;
-            Ok(EvalOutput::Owned(Expr::Word(vec![bool])))
-        } else {
-            Err(anyhow!("invalid arguments for gt: {:?}", exprs))
-        }
+    pub fn gt_unsigned(interp: &'a mut Interpreter) -> anyhow::Result<()> {
+        let rhs = interp.pop_expr()?.into_word()?;
+        let lhs = interp.pop_expr()?.into_word()?;
+        let bool = (BigUint::from_bytes_le(&lhs) > BigUint::from_bytes_le(&rhs)) as u8;
+        interp.stack.push(Expr::Word(vec![bool]));
+        Ok(())
     }
 
-    pub fn gt_unsigned(_interp: &'a mut Interpreter, exprs: impl Iterator<Item = ExprRef<'a>>) -> EvalResult<'a> {
-        // TODO: this can be done without allocations...
-        let exprs = exprs.collect_vec();
-        if let [ExprRef::Word(lhs), ExprRef::Word(rhs)] = exprs.as_slice() {
-            let bool = (BigUint::from_bytes_le(lhs) > BigUint::from_bytes_le(rhs)) as u8;
-            Ok(EvalOutput::Owned(Expr::Word(vec![bool])))
-        } else {
-            Err(anyhow!("invalid arguments for gt: {:?}", exprs))
+    pub fn r#while(interp: &'a mut Interpreter) -> anyhow::Result<()> {
+        let block = interp.pop_expr()?.into_list()?;
+        // cond needs to push a boolean onto the stack
+        let cond = interp.pop_expr()?.into_list()?;
+
+        let should_continue = |interp: &mut Interpreter| -> anyhow::Result<_> {
+            interp.eval(cond.clone().into_iter())?;
+            Ok(is_truthy(interp.pop_expr()?.as_ref().as_word()?))
+        };
+
+        let compute_block = |interp: &mut Interpreter| -> anyhow::Result<_> {
+            interp.eval(block.clone().into_iter())?;
+            Ok(())
+        };
+        while should_continue(interp)? {
+            compute_block(interp)?;
         }
+        Ok(())
     }
 
-    pub fn r#while(interp: &'a mut Interpreter, exprs: Box<dyn Iterator<Item = ExprRef<'a>> + 'a>) -> EvalResult<'a> {
-        // TODO: this can be done without allocations...
-        let exprs = exprs.collect_vec();
-        if let [ExprRef::List(cond), ExprRef::List(block)] = exprs.as_slice() {
-            let should_continue = |interp: &mut Interpreter| -> anyhow::Result<_> {
-                let exprs_to_eval = cond.iter().map(|expr| expr.as_ref());
-                let result = interp.eval(Box::new(exprs_to_eval))?;
-                let result_ref = result.as_ref();
-                let b = is_truthy(result_ref.as_word()?);
-                Ok((result, b))
-            };
-            let (condition_result, b) = should_continue(interp)?;
-            if !b {
-                return Ok(EvalOutput::Owned(condition_result))
-            }
-
-            let compute_block = |interp: &mut Interpreter| -> anyhow::Result<_> {
-                interp.eval(Box::new(block.iter().map(|expr| expr.as_ref())))
-            };
-            let mut result = compute_block(interp)?;
-            while should_continue(interp)?.1 {
-                result = compute_block(interp)?;
-            }
-            Ok(EvalOutput::Owned(result))
-        } else {
-            Err(anyhow!("invalid arguments for gt: {:?}", exprs))
-        }
-    }
-
-    pub fn append(_interp: &'a mut Interpreter, exprs: impl Iterator<Item = ExprRef<'a>>) -> EvalResult<'a> {
-        // TODO: this can be done without allocations...
-        let exprs = exprs.collect_vec();
-        if let [ExprRef::List(list), expr] = exprs.as_slice() {
-            let expr = expr.to_owned();
-            let new_list = list.into_iter().chain(once(&expr));
-            Ok(EvalOutput::Owned(Expr::List(new_list.map(|expr| expr.to_owned()).collect())))
-        } else {
-            Err(anyhow!("invalid arguments for append: {:?}", exprs))
-        }
+    pub fn append(interp: &'a mut Interpreter) -> anyhow::Result<()> {
+        let to_append = interp.pop_expr()?;
+        let mut list = interp.pop_expr()?.into_list()?;
+        list.push(to_append);
+        interp.stack.push(Expr::List(list));
+        Ok(())
     }
 }
 
