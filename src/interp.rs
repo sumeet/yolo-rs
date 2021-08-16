@@ -28,8 +28,7 @@ impl Interpreter {
     pub fn eval(&'a mut self, mut exprs: impl Iterator<Item = ExprRef<'a>> + 'a)  -> anyhow::Result<Expr> {
         let grabbed = grab_an_expr(&mut exprs)?;
         let name = grabbed.as_word()?.to_owned();
-        let x = self.call_builtin(&name, exprs)?;
-        Ok(match x {
+        Ok(match self.call_builtin(&name, exprs)? {
            EvalOutput::Ref(r) => r.to_owned(),
            EvalOutput::Owned(owned) => owned,
         })
@@ -199,9 +198,9 @@ mod builtins {
         // TODO: this can be done without allocations...
         let exprs = exprs.collect_vec();
         if let [ExprRef::List(list), expr] = exprs.as_slice() {
-            let mut new_list = list.to_vec();
-            new_list.push(expr.to_owned());
-            Ok(EvalOutput::Owned(Expr::List(new_list)))
+            let expr = expr.to_owned();
+            let new_list = list.into_iter().chain(once(&expr));
+            Ok(EvalOutput::Owned(Expr::List(new_list.map(|expr| expr.to_owned()).collect())))
         } else {
             Err(anyhow!("invalid arguments for append: {:?}", exprs))
         }

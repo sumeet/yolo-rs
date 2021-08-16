@@ -21,8 +21,8 @@ fn main() {
 // another idea, the package icon can go on the item instead of an icon for the function itself
 r#".exec-all
 (.chain (.temp.u64 0) (.define counter))
-(.chain (.@ counter) (.chain (.temp.u64 1) (.+-u)) (.define counter))
-(.chain (.@ counter) (.temp.print-u64))
+(.define .u-incr (.chain (.temp.u64 1) (.append (.+-u))))
+(.chain (.@ counter) (.u-incr) (.define counter))
 "#;
     println!("{}", code);
     let exprs = parser::parse_exprs(&mut code.as_bytes().into_iter().copied());
