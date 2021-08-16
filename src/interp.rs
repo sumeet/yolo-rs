@@ -2,6 +2,7 @@ use crate::parser::{Expr, Word, ExprRef, WordRef};
 use std::collections::HashMap;
 use std::str::{from_utf8, FromStr};
 use std::iter::once;
+use anyhow::anyhow;
 
 #[derive(Debug)]
 pub enum EvalOutput<'a> {
@@ -9,14 +10,14 @@ pub enum EvalOutput<'a> {
     Owned(Expr),
 }
 
-pub type EvalResult<'a> = Result<EvalOutput<'a>, Box<dyn std::error::Error>>;
+pub type EvalResult<'a> = anyhow::Result<EvalOutput<'a>>;
 
 pub struct Interpreter {
     storage: HashMap<Word, Expr>,
 }
 
-fn grab_an_expr(exprs: &'b mut impl Iterator<Item = ExprRef<'a>>) -> Result<ExprRef<'a>, Box<dyn std::error::Error>> {
-    Ok(exprs.next().ok_or("tried to pop an expr from an empty list")?)
+fn grab_an_expr(exprs: &'b mut impl Iterator<Item = ExprRef<'a>>) -> anyhow::Result<ExprRef<'a>> {
+    Ok(exprs.next().ok_or_else(|| anyhow!("tried to pop an expr from an empty list"))?)
 }
 
 impl Interpreter {
@@ -24,7 +25,7 @@ impl Interpreter {
         Self { storage: HashMap::new() }
     }
 
-    pub fn eval(&'a mut self, mut exprs: impl Iterator<Item = ExprRef<'a>> + 'a)  -> Result<Expr, Box<dyn std::error::Error>> {
+    pub fn eval(&'a mut self, mut exprs: impl Iterator<Item = ExprRef<'a>> + 'a)  -> anyhow::Result<Expr> {
         let grabbed = grab_an_expr(&mut exprs)?;
         let name = grabbed.as_word()?.to_owned();
         let x = self.call_builtin(&name, exprs)?;
@@ -46,21 +47,24 @@ impl Interpreter {
             b".chain" => builtins::chain(self, Box::new(exprs)),
             b".while" => builtins::r#while(self, Box::new(exprs)),
 
+            // expr stuff
+            b".append" => builtins::append(self, exprs),
+
             // temp functions until i get bootstrapped
             b".temp.u64" => {
                 let w = exprs.next();
-                let w = w.ok_or("expected a word")?;
+                let w = w.ok_or_else(|| anyhow!("expected a word"))?;
                 let w = w.as_word()?;
                 Ok(EvalOutput::Owned(Expr::Word(u64::from_str(from_utf8(&w)?)?.to_ne_bytes().to_vec())))
             }
             b".temp.print-u64" => {
                 let w = exprs.next();
-                let expr_ref = w.ok_or("expected a word")?;
+                let expr_ref = w.ok_or_else(|| anyhow!("expected a word"))?;
                 let w = expr_ref.as_word()?;
                 println!("{}", u64::from_ne_bytes(w.try_into()?));
                 Ok(EvalOutput::Ref(expr_ref))
             }
-            _ => Err(format!("builtin {} not found", from_utf8(name).unwrap()).into()),
+            _ => Err(anyhow!("builtin {} not found", from_utf8(name).unwrap())),
         }
     }
 }
@@ -78,7 +82,7 @@ mod builtins {
             interp.storage.insert(name.to_vec(), to.to_owned());
             Ok(EvalOutput::Ref(ExprRef::Word(name)))
         } else {
-            Err(format!("invalid arguments for define: {:?}", exprs).into())
+            Err(anyhow!("invalid arguments for define: {:?}", exprs))
         }
     }
 
@@ -87,17 +91,17 @@ mod builtins {
         let exprs = exprs.collect_vec();
         if let [ExprRef::Word(name)] = exprs.as_slice() {
             let value = interp.storage.get(*name)
-                .ok_or_else(|| format!("name {:?} not found", from_utf8(name).unwrap()))?;
+                .ok_or_else(|| anyhow!("name {:?} not found", from_utf8(name).unwrap()))?;
             Ok(EvalOutput::Ref(value.as_ref()))
         } else {
-            Err(format!("invalid arguments for dedef: {:?}", exprs).into())
+            Err(anyhow!("invalid arguments for dedef: {:?}", exprs))
         }
     }
 
     // this must take a Box because this func is mutually recursive with interp.eval(), otherwise
     // the type for the iterator couldn't be computed
     pub fn exec_all(interp: &'a mut Interpreter, mut exprs: Box<dyn Iterator<Item = ExprRef<'a>> + 'a>) -> EvalResult<'a> {
-        let first = exprs.next().ok_or("tried to exec-all empty expr list")?;
+        let first = exprs.next().ok_or_else(|| anyhow!("tried to exec-all empty expr list"))?;
         let mut res = interp.eval(first.as_list()?.iter().map(|expr| expr.as_ref()))?;
          for expr in exprs {
              res = interp.eval(expr.as_list()?.iter().map(|expr| expr.as_ref()))?;
@@ -109,7 +113,7 @@ mod builtins {
     // this must take a Box because this func is mutually recursive with interp.eval(), otherwise
     // the type for the iterator couldn't be computed
     pub fn chain(interp: &'a mut Interpreter, mut exprs: Box<dyn Iterator<Item = ExprRef<'a>> + 'a>) -> EvalResult<'a> {
-        let first = exprs.next().ok_or("tried to chain an empty list")?;
+        let first = exprs.next().ok_or_else(|| anyhow!("tried to chain an empty list"))?;
         let mut args = interp.eval(first.as_list()?.iter().map(|expr| expr.as_ref()))?;
         for next_to_evaluate in exprs {
             let next_to_evaluate = next_to_evaluate.as_list()?.iter().map(|expr| expr.as_ref());
@@ -125,7 +129,7 @@ mod builtins {
             println!("{}", from_utf8(word)?);
             Ok(EvalOutput::Ref(ExprRef::Word(word)))
         } else {
-            Err(format!("invalid arguments for print_ascii: {:?}", exprs).into())
+            Err(anyhow!("invalid arguments for print_ascii: {:?}", exprs))
         }
     }
 
@@ -136,7 +140,7 @@ mod builtins {
             let sum = BigUint::from_bytes_le(lhs) + BigUint::from_bytes_le(rhs);
             Ok(EvalOutput::Owned(Expr::Word(sum.to_bytes_le())))
         } else {
-            Err(format!("invalid arguments for plus_unsigned: {:?}", exprs).into())
+            Err(anyhow!("invalid arguments for plus_unsigned: {:?}", exprs))
         }
     }
 
@@ -147,7 +151,7 @@ mod builtins {
             let bool = (BigUint::from_bytes_le(lhs) < BigUint::from_bytes_le(rhs)) as u8;
             Ok(EvalOutput::Owned(Expr::Word(vec![bool])))
         } else {
-            Err(format!("invalid arguments for gt: {:?}", exprs).into())
+            Err(anyhow!("invalid arguments for gt: {:?}", exprs))
         }
     }
 
@@ -158,7 +162,7 @@ mod builtins {
             let bool = (BigUint::from_bytes_le(lhs) > BigUint::from_bytes_le(rhs)) as u8;
             Ok(EvalOutput::Owned(Expr::Word(vec![bool])))
         } else {
-            Err(format!("invalid arguments for gt: {:?}", exprs).into())
+            Err(anyhow!("invalid arguments for gt: {:?}", exprs))
         }
     }
 
@@ -166,7 +170,7 @@ mod builtins {
         // TODO: this can be done without allocations...
         let exprs = exprs.collect_vec();
         if let [ExprRef::List(cond), ExprRef::List(block)] = exprs.as_slice() {
-            let should_continue = |interp: &mut Interpreter| -> Result<_, Box<dyn std::error::Error>> {
+            let should_continue = |interp: &mut Interpreter| -> anyhow::Result<_> {
                 let exprs_to_eval = cond.iter().map(|expr| expr.as_ref());
                 let result = interp.eval(exprs_to_eval)?;
                 let result_ref = result.as_ref();
@@ -178,7 +182,7 @@ mod builtins {
                 return Ok(EvalOutput::Owned(condition_result))
             }
 
-            let compute_block = |interp: &mut Interpreter| -> Result<_, Box<dyn std::error::Error>> {
+            let compute_block = |interp: &mut Interpreter| -> anyhow::Result<_> {
                 interp.eval(block.iter().map(|expr| expr.as_ref()))
             };
             let mut result = compute_block(interp)?;
@@ -187,7 +191,19 @@ mod builtins {
             }
             Ok(EvalOutput::Owned(result))
         } else {
-            Err(format!("invalid arguments for gt: {:?}", exprs).into())
+            Err(anyhow!("invalid arguments for gt: {:?}", exprs))
+        }
+    }
+
+    pub fn append(_interp: &'a mut Interpreter, exprs: impl Iterator<Item = ExprRef<'a>>) -> EvalResult<'a> {
+        // TODO: this can be done without allocations...
+        let exprs = exprs.collect_vec();
+        if let [ExprRef::List(list), expr] = exprs.as_slice() {
+            let mut new_list = list.to_vec();
+            new_list.push(expr.to_owned());
+            Ok(EvalOutput::Owned(Expr::List(new_list)))
+        } else {
+            Err(anyhow!("invalid arguments for append: {:?}", exprs))
         }
     }
 }

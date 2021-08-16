@@ -1,3 +1,5 @@
+use anyhow::anyhow;
+
 pub type Word = Vec<u8>;
 pub type List = Vec<Expr>;
 pub type WordRef<'a> = &'a [u8];
@@ -25,17 +27,17 @@ impl ExprRef<'_> {
         }
     }
 
-    pub fn as_word(&self) -> Result<WordRef, Box<dyn std::error::Error>> {
+    pub fn as_word(&self) -> anyhow::Result<WordRef> {
         match self {
             Self::Word(w) => Ok(w),
-            otherwise => Err(format!("expected Word but got {:?}", otherwise).into())
+            otherwise => Err(anyhow!("expected Word but got {:?}", otherwise))
         }
     }
 
-    pub fn as_list(&self) -> Result<ListRef, Box<dyn std::error::Error>> {
+    pub fn as_list(&self) -> anyhow::Result<ListRef> {
         match self {
             Self::List(l) => Ok(l),
-            otherwise => Err(format!("expected List but got {:?}", otherwise).into())
+            otherwise => Err(anyhow!("expected List but got {:?}", otherwise))
         }
     }
 }
