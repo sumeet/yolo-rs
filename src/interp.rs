@@ -39,8 +39,8 @@ impl Interpreter {
             b".define" => builtins::define(self, exprs),
             b".@" => builtins::dedef(self, exprs),
             b".print-ascii" => builtins::print_ascii(self, exprs),
-            b".exec-all" => builtins::exec_all(self, exprs),
-            // b".chain" => builtins::chain(self, exprs),
+            b".exec-all" => builtins::exec_all(self, Box::new(exprs)),
+            b".chain" => builtins::chain(self, Box::new(exprs)),
             _ => return Err(format!("builtin {} not found", from_utf8(name).unwrap()).into()),
         }
     }
@@ -74,28 +74,28 @@ mod builtins {
         }
     }
 
-    pub fn exec_all(interp: &'a mut Interpreter, mut exprs: impl Iterator<Item = ExprRef<'a>>) -> EvalResult<'a> {
+    // this must take a Box because this func is mutually recursive with interp.eval(), otherwise
+    // the type for the iterator couldn't be computed
+    pub fn exec_all(interp: &'a mut Interpreter, mut exprs: Box<dyn Iterator<Item = ExprRef<'a>> + 'a>) -> EvalResult<'a> {
         let first = exprs.next().ok_or("tried to exec-all empty expr list")?;
-        let list = first.as_list()?.iter().map(|expr| expr.as_ref()).collect_vec();
-        // we just have to allocate and collect here otherwise the type of the iterator recurses with eval()
-        let mut res = interp.eval(list.into_iter())?;
+        let mut res = interp.eval(first.as_list()?.iter().map(|expr| expr.as_ref()))?;
          for expr in exprs {
-             let list = expr.as_list()?.iter().map(|expr| expr.as_ref()).collect_vec();
-             res = interp.eval(list.into_iter())?;
+             res = interp.eval(expr.as_list()?.iter().map(|expr| expr.as_ref()))?;
          }
         Ok(EvalOutput::Owned(res))
     }
 
     // TODO: should the arg stack just be global?
-    pub fn chain(interp: &'a mut Interpreter, mut exprs: impl Iterator<Item = ExprRef<'a>>) -> EvalResult<'a> {
+    // this must take a Box because this func is mutually recursive with interp.eval(), otherwise
+    // the type for the iterator couldn't be computed
+    pub fn chain(interp: &'a mut Interpreter, mut exprs: Box<dyn Iterator<Item = ExprRef<'a>> + 'a>) -> EvalResult<'a> {
         let first = exprs.next().ok_or("tried to chain an empty list")?;
         let mut args = interp.eval(first.as_list()?.iter().map(|expr| expr.as_ref()))?;
-
         for next_to_evaluate in exprs {
             let next_to_evaluate = next_to_evaluate.as_list()?.iter().map(|expr| expr.as_ref());
             args = interp.eval(next_to_evaluate.chain(once(args.as_ref())))?;
         }
-        todo!()
+        Ok(EvalOutput::Owned(args))
     }
 
     pub fn print_ascii(_: &'a mut Interpreter, exprs: impl Iterator<Item = ExprRef<'a>>) -> EvalResult<'a> {

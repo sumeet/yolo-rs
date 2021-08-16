@@ -22,7 +22,7 @@ fn main() {
 r#".exec-all
 (.define my-guy hello)
 (.print-ascii my-guy)
-(.chain (@. my-guy) .print-ascii)
+(.chain (.@ my-guy) (.print-ascii))
 "#;
     println!("{}", code);
     let exprs = parser::parse_exprs(&mut code.as_bytes().into_iter().copied());
