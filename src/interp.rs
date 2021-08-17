@@ -57,9 +57,11 @@ impl Interpreter {
         match name {
             b".error" => builtins::error(self),
             b"." => builtins::exec_all(self),
-            b".?" => builtins::cond(self),
+            b".?" => builtins::if_else(self),
+            b".push" => builtins::push(self),
             b".drop" => builtins::drop(self),
             b".dup" => builtins::dup(self),
+            b".swap" => builtins::swap(self),
             b".define" => builtins::define(self),
             b".peek-len" => builtins::length(self),
             b".@" => builtins::dedef(self),
@@ -137,19 +139,31 @@ mod builtins {
         Ok(())
     }
 
+    // a no-op, since "arg-passing" pushes stuff onto the stack anyhow
+    pub fn push(_interp: &mut Interpreter) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     pub fn drop(interp: &mut Interpreter) -> anyhow::Result<()> {
         interp.pop_expr()?;
         Ok(())
     }
 
-    // pub fn swap(interp: &mut Interpreter) -> anyhow::Result<()> {
-    //     let n =
-    // }
+    pub fn swap(interp: &mut Interpreter) -> anyhow::Result<()> {
+        let back = pop_uint(interp)?;
+        let back = back
+            .to_usize()
+            .ok_or(anyhow!("{} can't be represented by usize"))?;
+        let len = interp.stack.len();
+        interp.stack.swap(len - 1, len - 1 - back);
+        Ok(())
+    }
 
     // this should probably take an operand
     pub fn dup(interp: &mut Interpreter) -> anyhow::Result<()> {
         let back = pop_uint(interp)?;
-        let back = back.to_usize()
+        let back = back
+            .to_usize()
             .ok_or(anyhow!("{} can't be represented by usize"))?;
         interp.stack.push(interp.peek_expr(back)?.to_owned());
         Ok(())
@@ -166,7 +180,7 @@ mod builtins {
         Ok(())
     }
 
-    pub fn cond(interp: &mut Interpreter) -> anyhow::Result<()> {
+    pub fn if_else(interp: &mut Interpreter) -> anyhow::Result<()> {
         let bool = interp.pop_expr()?.into_word()?;
         if is_truthy(bool.as_ref()) {
             self::eval(interp)?;

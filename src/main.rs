@@ -21,22 +21,27 @@ fn main() {
 //
 // another idea, the package icon can go on the item instead of an icon for the function itself
 r#". (
-    (.define .while (. (
-        // last element on the stack is the loop body, next element on the stack is the condition
+    (.define .if (. (
+        // last element on the stack is the conditional body,
+        // next element on the stack is the condition
         //
-        // dup the condition to the top of the stack
+        // swap the condition to the top of the stack
         (.u 1)
-        (.dup)
+        (.swap)
         // evaluates the condition, which should push true or false onto the stack
         (.eval)
+        // either evaluates the conditional body or drops it
+        (.?)
     )))
     (.define .u++ (. (
-        (.temp.u 1)
+        (.u 1)
         (.u+)
     )))
 
-    (.u 57)
-    (.u-print)
+    (.u 69)
+    (.push (.u-print))
+    (.u 0)
+    (.?)
 )
 "#;
     println!("{}", code);
