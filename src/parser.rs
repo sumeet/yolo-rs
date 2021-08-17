@@ -46,10 +46,10 @@ pub enum ExprRef<'a> {
 }
 
 impl ExprRef<'_> {
-    pub fn as_word(&self) -> anyhow::Result<WordRef> {
+    pub fn to_owned(&self) -> Expr {
         match self {
-            Self::Word(w) => Ok(w),
-            otherwise => Err(anyhow!("expected Word but got {:?}", otherwise))
+            ExprRef::Word(w) => Expr::Word(w.to_vec()),
+            ExprRef::List(l) => Expr::List(l.to_vec()),
         }
     }
 }
@@ -65,14 +65,14 @@ impl Expr {
     pub fn into_list(self) -> anyhow::Result<List> {
         match self {
             Expr::List(l) => Ok(l),
-            _ => Err(anyhow!("expected List but got {:?}", self))
+            _ => Err(anyhow!("expected List but got {:?}", self)),
         }
     }
 
     pub fn into_word(self) -> anyhow::Result<Word> {
         match self {
             Expr::Word(w) => Ok(w),
-            _ => Err(anyhow!("expected Word but got {:?}", self))
+            _ => Err(anyhow!("expected Word but got {:?}", self)),
         }
     }
 }
@@ -84,34 +84,29 @@ pub fn parse_exprs(cs: &mut impl Iterator<Item = u8>) -> List {
 // TODO: this could be an iterator of Exprs?
 fn parse_exprs_rec(cs: &mut impl Iterator<Item = u8>, is_inside_list: bool) -> List {
     let mut exprs = List::new();
-    let mut current_string : Option<Word> = None;
+    let mut current_string: Option<Word> = None;
     loop {
         match cs.next() {
-            Some(c) => {
-                match c {
-                    b'(' => {
-                        exprs.push(Expr::List(parse_exprs_rec(cs, true)));
-                    }
-                    b')' => {
-                        if is_inside_list {
-                            exprs.extend(current_string.take().map(Expr::Word));
-                            break;
-                        } else {
-                            panic!("got a ) and wasn't expecting one");
-                        }
-                    }
-                    c if (c as char).is_whitespace() => {
+            Some(c) => match c {
+                b'(' => {
+                    exprs.push(Expr::List(parse_exprs_rec(cs, true)));
+                }
+                b')' => {
+                    if is_inside_list {
                         exprs.extend(current_string.take().map(Expr::Word));
-                    }
-                    c => {
-                        match current_string.as_mut() {
-                            None => current_string = Some(vec![c]),
-                            Some(s) => s.push(c),
-                        }
+                        break;
+                    } else {
+                        panic!("got a ) and wasn't expecting one");
                     }
                 }
-
-            }
+                c if (c as char).is_whitespace() => {
+                    exprs.extend(current_string.take().map(Expr::Word));
+                }
+                c => match current_string.as_mut() {
+                    None => current_string = Some(vec![c]),
+                    Some(s) => s.push(c),
+                },
+            },
             None => {
                 if is_inside_list {
                     panic!("was expecting a ) but reached end of stream")
