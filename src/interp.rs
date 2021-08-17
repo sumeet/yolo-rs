@@ -1,6 +1,7 @@
 use crate::parser::{Expr, ExprRef, Word, WordRef};
 use anyhow::{anyhow, bail};
 use num_bigint::BigUint;
+use num_traits::cast::ToPrimitive;
 use std::collections::HashMap;
 use std::str::{from_utf8, FromStr};
 
@@ -45,11 +46,11 @@ impl Interpreter {
         self.stack.pop().ok_or(anyhow!("stack was empty"))
     }
 
-    pub fn peek_expr(&self) -> anyhow::Result<ExprRef> {
+    pub fn peek_expr(&self, back: usize) -> anyhow::Result<ExprRef> {
         self.stack
-            .last()
+            .get(self.stack.len() - 1 - back)
             .map(|expr| expr.as_ref())
-            .ok_or(anyhow!("stack was empty"))
+            .ok_or(anyhow!("stack was not {} deep", back))
     }
 
     pub fn call_builtin(&mut self, name: WordRef<'b>) -> anyhow::Result<()> {
@@ -62,17 +63,18 @@ impl Interpreter {
             b".define" => builtins::define(self),
             b".peek-len" => builtins::length(self),
             b".@" => builtins::dedef(self),
-            b".+-u" => builtins::plus_unsigned(self),
-            b".>-u" => builtins::gt_unsigned(self),
-            b".<-u" => builtins::lt_unsigned(self),
             b".empty-word" => builtins::empty_word(self),
             b".write" => builtins::write(self),
 
             // expr stuff
             b".append" => builtins::append(self),
 
-            // temp functions until i get bootstrapped
-            b".temp.u" => {
+            // stuff for unsigned numbers
+            b".u+" => builtins::plus_unsigned(self),
+            b".u-" => builtins::minus_unsigned(self),
+            b".u>" => builtins::gt_unsigned(self),
+            b".u<" => builtins::lt_unsigned(self),
+            b".u" => {
                 let w = self.stack.pop();
                 let w = w.ok_or_else(|| anyhow!("expected a word"))?;
                 let w = w.into_word()?;
@@ -81,7 +83,7 @@ impl Interpreter {
                 ));
                 Ok(())
             }
-            b".temp.print-u" => {
+            b".u-print" => {
                 let w = self.stack.pop();
                 let w = w.ok_or_else(|| anyhow!("expected a word"))?;
                 let w = w.into_word()?;
@@ -146,13 +148,16 @@ mod builtins {
 
     // this should probably take an operand
     pub fn dup(interp: &mut Interpreter) -> anyhow::Result<()> {
-        interp.stack.push(interp.peek_expr()?.to_owned());
+        let back = pop_uint(interp)?;
+        let back = back.to_usize()
+            .ok_or(anyhow!("{} can't be represented by usize"))?;
+        interp.stack.push(interp.peek_expr(back)?.to_owned());
         Ok(())
     }
 
     // doesn't consume the last element of the stack, this peeks
     pub fn length(interp: &mut Interpreter) -> anyhow::Result<()> {
-        let el = interp.peek_expr()?;
+        let el = interp.peek_expr(0)?;
         let len = match el {
             ExprRef::Word(w) => w.len(),
             ExprRef::List(l) => l.len(),
@@ -188,6 +193,13 @@ mod builtins {
         let rhs = pop_uint(interp)?;
         let lhs = pop_uint(interp)?;
         interp.stack.push(Expr::Word((lhs + rhs).to_bytes_le()));
+        Ok(())
+    }
+
+    pub fn minus_unsigned(interp: &mut Interpreter) -> anyhow::Result<()> {
+        let rhs = pop_uint(interp)?;
+        let lhs = pop_uint(interp)?;
+        interp.stack.push(Expr::Word((lhs - rhs).to_bytes_le()));
         Ok(())
     }
 

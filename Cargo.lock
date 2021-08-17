@@ -66,4 +66,5 @@ dependencies = [
  "anyhow",
  "itertools",
  "num-bigint",
+ "num-traits",
 ]
