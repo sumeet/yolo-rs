@@ -83,10 +83,10 @@ impl Expr {
         }
     }
 
-    pub fn into_word(self) -> anyhow::Result<Bytes> {
+    pub fn into_bytes(self) -> anyhow::Result<Bytes> {
         match self {
             Expr::Bytes(w) => Ok(w),
-            _ => Err(anyhow!("expected Word but got {:?}", self)),
+            _ => Err(anyhow!("expected Bytes but got {:?}", self)),
         }
     }
 }

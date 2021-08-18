@@ -37,7 +37,7 @@ impl Interpreter {
 
     pub fn eval(&mut self, mut exprs: impl Iterator<Item = Expr>) -> anyhow::Result<()> {
         let grabbed = grab_an_expr(&mut exprs)?;
-        let name = grabbed.into_word()?;
+        let name = grabbed.into_bytes()?;
         self.stack.extend(exprs);
 
         let definition = self
@@ -77,7 +77,7 @@ impl Interpreter {
             b".define" => builtins::define(self),
             b".peek-len" => builtins::length(self),
             b".@" => builtins::dedef(self),
-            b".empty-word" => builtins::empty_word(self),
+            b".empty-bytes" => builtins::empty_bytes(self),
             b".write" => builtins::write(self),
 
             // expr stuff
@@ -90,8 +90,8 @@ impl Interpreter {
             b".u<" => builtins::lt_unsigned(self),
             b".u" => {
                 let w = self.stack.pop();
-                let w = w.ok_or_else(|| anyhow!("expected a word"))?;
-                let w = w.into_word()?;
+                let w = w.ok_or_else(|| anyhow!("expected a bytes"))?;
+                let w = w.into_bytes()?;
                 self.stack.push(Expr::Bytes(
                     BigUint::from_str(from_utf8(&w)?)?.to_bytes_le().into(),
                 ));
@@ -99,8 +99,8 @@ impl Interpreter {
             }
             b".u-print" => {
                 let w = self.stack.pop();
-                let w = w.ok_or_else(|| anyhow!("expected a word"))?;
-                let w = w.into_word()?;
+                let w = w.ok_or_else(|| anyhow!("expected a bytes"))?;
+                let w = w.into_bytes()?;
                 println!("{}", BigUint::from_bytes_le(&w));
                 Ok(())
             }
@@ -116,13 +116,13 @@ mod builtins {
 
     pub fn define(interp: &mut Interpreter) -> anyhow::Result<()> {
         let definition = interp.pop_expr()?;
-        let w = interp.pop_expr()?.into_word()?;
+        let w = interp.pop_expr()?.into_bytes()?;
         interp.storage.insert(w, definition);
         Ok(())
     }
 
     pub fn dedef(interp: &mut Interpreter) -> anyhow::Result<()> {
-        let w = interp.pop_expr()?.into_word()?;
+        let w = interp.pop_expr()?.into_bytes()?;
         interp
             .storage
             .get(&w)
@@ -192,7 +192,7 @@ mod builtins {
     }
 
     pub fn if_else(interp: &mut Interpreter) -> anyhow::Result<()> {
-        let bool = interp.pop_expr()?.into_word()?;
+        let bool = interp.pop_expr()?.into_bytes()?;
         if is_truthy(bool.as_ref()) {
             interp.swap_top_with(1)?;
             drop(interp)?;
@@ -204,13 +204,13 @@ mod builtins {
         Ok(())
     }
 
-    pub fn empty_word(interp: &mut Interpreter) -> anyhow::Result<()> {
+    pub fn empty_bytes(interp: &mut Interpreter) -> anyhow::Result<()> {
         interp.stack.push(Expr::Bytes(Default::default()));
         Ok(())
     }
 
     pub fn write(interp: &mut Interpreter) -> anyhow::Result<()> {
-        let w = interp.pop_expr()?.into_word()?;
+        let w = interp.pop_expr()?.into_bytes()?;
         let mut out = std::io::stdout();
         out.write_all(&w)?;
         out.flush()?;
@@ -255,7 +255,7 @@ mod builtins {
     }
 
     fn pop_uint(interp: &mut Interpreter) -> anyhow::Result<BigUint> {
-        Ok(uint(interp.pop_expr()?.into_word()?))
+        Ok(uint(interp.pop_expr()?.into_bytes()?))
     }
 }
 
