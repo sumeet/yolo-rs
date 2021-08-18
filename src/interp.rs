@@ -7,7 +7,7 @@ use std::str::{from_utf8, FromStr};
 
 pub struct Interpreter {
     storage: HashMap<Word, Expr>,
-    stack: Vec<Expr>,
+    pub(crate) stack: Vec<Expr>,
 }
 
 fn grab_an_expr(exprs: &mut impl Iterator<Item = Expr>) -> anyhow::Result<Expr> {
@@ -22,6 +22,12 @@ impl Interpreter {
             storage: HashMap::new(),
             stack: vec![],
         }
+    }
+
+    pub fn swap_top_with(&mut self, back: usize) -> anyhow::Result<()> {
+        let len = self.stack.len();
+        self.stack.swap(len - 1, len - 1 - back);
+        Ok(())
     }
 
     pub fn eval(&mut self, mut exprs: impl Iterator<Item = Expr>) -> anyhow::Result<()> {
@@ -56,7 +62,8 @@ impl Interpreter {
     pub fn call_builtin(&mut self, name: WordRef<'b>) -> anyhow::Result<()> {
         match name {
             b".error" => builtins::error(self),
-            b"." => builtins::exec_all(self),
+            b".|" => builtins::exec_all(self),
+            b"." => builtins::eval(self),
             b".?" => builtins::if_else(self),
             b".push" => builtins::push(self),
             b".drop" => builtins::drop(self),
@@ -154,8 +161,7 @@ mod builtins {
         let back = back
             .to_usize()
             .ok_or(anyhow!("{} can't be represented by usize"))?;
-        let len = interp.stack.len();
-        interp.stack.swap(len - 1, len - 1 - back);
+        interp.swap_top_with(back)?;
         Ok(())
     }
 
@@ -183,9 +189,12 @@ mod builtins {
     pub fn if_else(interp: &mut Interpreter) -> anyhow::Result<()> {
         let bool = interp.pop_expr()?.into_word()?;
         if is_truthy(bool.as_ref()) {
-            self::eval(interp)?;
+            interp.swap_top_with(1)?;
+            drop(interp)?;
+            eval(interp)?;
         } else {
-            self::drop(interp)?;
+            drop(interp)?;
+            eval(interp)?;
         }
         Ok(())
     }

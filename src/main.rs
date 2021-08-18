@@ -20,28 +20,28 @@ fn main() {
 // wouldn't be able to call it directly because none of these funcs are type checked
 //
 // another idea, the package icon can go on the item instead of an icon for the function itself
-r#". (
-    (.define .if (. (
-        // last element on the stack is the conditional body,
-        // next element on the stack is the condition
-        //
-        // swap the condition to the top of the stack
-        (.u 1)
-        (.swap)
-        // evaluates the condition, which should push true or false onto the stack
-        (.eval)
-        // either evaluates the conditional body or drops it
-        (.?)
-    )))
-    (.define .u++ (. (
-        (.u 1)
-        (.u+)
-    )))
+r#".| (
+    (.define .if (.| (
+        // last element on the stack is the else body to eval,
+        // next element on the stack is the if body to eval,
+        // next element on the stack is the condition to eval
+        //  (returns true/false),
 
-    (.u 69)
-    (.push (.u-print))
-    (.u 0)
-    (.?)
+        // swap the if body to the top of the stack
+        (.| ((.u 1) (.swap)))
+        // swap the condition to the top of the stack
+        (.| ((.u 2) (.swap)))
+        
+        // evaluates the condition, which should push true or false onto the stack
+        (.)
+        // either evaluates the conditional body or drops it
+        //(.?)
+    )))
+    
+    (.push (.| ((.u 90) (.u-print))))
+    (.push (.| ((.u 735) (.u-print))))
+    (.push (.| ((.u 68) (.u 69) (.u<))))
+    (.if)
 )
 "#;
     println!("{}", code);
@@ -54,6 +54,10 @@ r#". (
     let mut interpreter = Interpreter::new();
     println!("--- EVAL ---");
     interpreter.eval(exprs.into_iter()).unwrap();
+
+    println!("--- STACK ---");
+    interpreter.stack.reverse();
+    dbg!(interpreter.stack);
 }
 
 fn remove_comments(code: &str) -> String {
