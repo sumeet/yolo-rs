@@ -13,12 +13,25 @@ pub enum Expr {
     List(List),
 }
 
+// from https://docs.rs/encoding8/0.3.1/src/encoding8/ascii/mod.rs.html#121-123
+pub fn is_control(b: u8) -> bool {
+    const DEL: u8 = 127;
+    b < 32 || b == DEL
+}
+
+
 impl Debug for Expr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Expr::Word(w) => {
                 if let Ok(s) = from_utf8(w) {
-                    write!(f, "{}", s)?;
+                    for c in s.chars() {
+                        if is_control(c as u8) {
+                            write!(f, "0x{:02x}", c as u8)?;
+                        } else {
+                            write!(f, "{}", c)?;
+                        }
+                    }
                 } else {
                     write!(f, "{:?}", w)?;
                 }
