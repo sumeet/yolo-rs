@@ -1,15 +1,16 @@
 use anyhow::anyhow;
 use std::fmt::{Debug, Formatter};
 use std::str::from_utf8;
+use smallvec::{SmallVec,smallvec};
 
-pub type Word = Vec<u8>;
+pub type Bytes = SmallVec<[u8; 16]>;
 pub type List = Vec<Expr>;
-pub type WordRef<'a> = &'a [u8];
+pub type BytesRef<'a> = &'a [u8];
 pub type ListRef<'a> = &'a [Expr];
 
 #[derive(Clone)]
 pub enum Expr {
-    Word(Word),
+    Bytes(Bytes),
     List(List),
 }
 
@@ -23,7 +24,7 @@ pub fn is_control(b: u8) -> bool {
 impl Debug for Expr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Expr::Word(w) => {
+            Expr::Bytes(w) => {
                 if let Ok(s) = from_utf8(w) {
                     for c in s.chars() {
                         if is_control(c as u8) {
@@ -54,14 +55,14 @@ impl Debug for Expr {
 
 #[derive(Debug)]
 pub enum ExprRef<'a> {
-    Word(WordRef<'a>),
+    Bytes(BytesRef<'a>),
     List(ListRef<'a>),
 }
 
 impl ExprRef<'_> {
     pub fn to_owned(&self) -> Expr {
         match self {
-            ExprRef::Word(w) => Expr::Word(w.to_vec()),
+            ExprRef::Bytes(w) => Expr::Bytes((*w).into()),
             ExprRef::List(l) => Expr::List(l.to_vec()),
         }
     }
@@ -70,7 +71,7 @@ impl ExprRef<'_> {
 impl Expr {
     pub fn as_ref(&self) -> ExprRef<'_> {
         match self {
-            Expr::Word(w) => ExprRef::Word(w),
+            Expr::Bytes(w) => ExprRef::Bytes(w),
             Expr::List(l) => ExprRef::List(l),
         }
     }
@@ -82,9 +83,9 @@ impl Expr {
         }
     }
 
-    pub fn into_word(self) -> anyhow::Result<Word> {
+    pub fn into_word(self) -> anyhow::Result<Bytes> {
         match self {
-            Expr::Word(w) => Ok(w),
+            Expr::Bytes(w) => Ok(w),
             _ => Err(anyhow!("expected Word but got {:?}", self)),
         }
     }
@@ -97,7 +98,7 @@ pub fn parse_exprs(cs: &mut impl Iterator<Item = u8>) -> List {
 // TODO: this could be an iterator of Exprs?
 fn parse_exprs_rec(cs: &mut impl Iterator<Item = u8>, is_inside_list: bool) -> List {
     let mut exprs = List::new();
-    let mut current_string: Option<Word> = None;
+    let mut current_string: Option<Bytes> = None;
     loop {
         match cs.next() {
             Some(c) => match c {
@@ -106,17 +107,17 @@ fn parse_exprs_rec(cs: &mut impl Iterator<Item = u8>, is_inside_list: bool) -> L
                 }
                 b')' => {
                     if is_inside_list {
-                        exprs.extend(current_string.take().map(Expr::Word));
+                        exprs.extend(current_string.take().map(Expr::Bytes));
                         break;
                     } else {
                         panic!("got a ) and wasn't expecting one");
                     }
                 }
                 c if (c as char).is_whitespace() => {
-                    exprs.extend(current_string.take().map(Expr::Word));
+                    exprs.extend(current_string.take().map(Expr::Bytes));
                 }
                 c => match current_string.as_mut() {
-                    None => current_string = Some(vec![c]),
+                    None => current_string = Some(smallvec![c]),
                     Some(s) => s.push(c),
                 },
             },
@@ -124,7 +125,7 @@ fn parse_exprs_rec(cs: &mut impl Iterator<Item = u8>, is_inside_list: bool) -> L
                 if is_inside_list {
                     panic!("was expecting a ) but reached end of stream")
                 } else {
-                    exprs.extend(current_string.take().map(Expr::Word));
+                    exprs.extend(current_string.take().map(Expr::Bytes));
                     break;
                 }
             }

@@ -1,13 +1,14 @@
-use crate::parser::{Expr, ExprRef, Word, WordRef};
+use crate::parser::{Expr, ExprRef, Bytes, BytesRef};
 use anyhow::{anyhow, bail};
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
 use std::collections::HashMap;
 use std::str::{from_utf8, FromStr};
+use smallvec::smallvec;
 
 pub struct Interpreter {
-    storage: HashMap<Word, Expr>,
-    pub(crate) stack: Vec<Expr>,
+    storage: HashMap<Bytes, Expr>,
+    stack: Vec<Expr>,
 }
 
 fn grab_an_expr(exprs: &mut impl Iterator<Item = Expr>) -> anyhow::Result<Expr> {
@@ -22,6 +23,10 @@ impl Interpreter {
             storage: HashMap::new(),
             stack: vec![],
         }
+    }
+
+    pub fn dbg_stack(&self) {
+        dbg!(&self.stack);
     }
 
     pub fn swap_top_with(&mut self, back: usize) -> anyhow::Result<()> {
@@ -59,10 +64,10 @@ impl Interpreter {
             .ok_or(anyhow!("stack was not {} deep", back))
     }
 
-    pub fn call_builtin(&mut self, name: WordRef<'b>) -> anyhow::Result<()> {
+    pub fn call_builtin(&mut self, name: BytesRef<'b>) -> anyhow::Result<()> {
         match name {
             b".error" => builtins::error(self),
-            b".|" => builtins::exec_all(self),
+            b".|>" => builtins::exec_all(self),
             b"." => builtins::eval(self),
             b".?" => builtins::if_else(self),
             b".push" => builtins::push(self),
@@ -87,8 +92,8 @@ impl Interpreter {
                 let w = self.stack.pop();
                 let w = w.ok_or_else(|| anyhow!("expected a word"))?;
                 let w = w.into_word()?;
-                self.stack.push(Expr::Word(
-                    BigUint::from_str(from_utf8(&w)?)?.to_bytes_le().to_vec(),
+                self.stack.push(Expr::Bytes(
+                    BigUint::from_str(from_utf8(&w)?)?.to_bytes_le().into(),
                 ));
                 Ok(())
             }
@@ -179,10 +184,10 @@ mod builtins {
     pub fn length(interp: &mut Interpreter) -> anyhow::Result<()> {
         let el = interp.peek_expr(0)?;
         let len = match el {
-            ExprRef::Word(w) => w.len(),
+            ExprRef::Bytes(w) => w.len(),
             ExprRef::List(l) => l.len(),
         };
-        interp.stack.push(Expr::Word(len.to_ne_bytes().to_vec()));
+        interp.stack.push(Expr::Bytes(len.to_ne_bytes().as_slice().into()));
         Ok(())
     }
 
@@ -200,7 +205,7 @@ mod builtins {
     }
 
     pub fn empty_word(interp: &mut Interpreter) -> anyhow::Result<()> {
-        interp.stack.push(Expr::Word(vec![]));
+        interp.stack.push(Expr::Bytes(Default::default()));
         Ok(())
     }
 
@@ -215,28 +220,29 @@ mod builtins {
     pub fn plus_unsigned(interp: &mut Interpreter) -> anyhow::Result<()> {
         let rhs = pop_uint(interp)?;
         let lhs = pop_uint(interp)?;
-        interp.stack.push(Expr::Word((lhs + rhs).to_bytes_le()));
+        // TODO: implement the arithmetic operations myself because this is doing a lot of cloning and stuff
+        interp.stack.push(Expr::Bytes((lhs + rhs).to_bytes_le().into()));
         Ok(())
     }
 
     pub fn minus_unsigned(interp: &mut Interpreter) -> anyhow::Result<()> {
         let rhs = pop_uint(interp)?;
         let lhs = pop_uint(interp)?;
-        interp.stack.push(Expr::Word((lhs - rhs).to_bytes_le()));
+        interp.stack.push(Expr::Bytes((lhs - rhs).to_bytes_le().into()));
         Ok(())
     }
 
     pub fn lt_unsigned(interp: &mut Interpreter) -> anyhow::Result<()> {
         let rhs = pop_uint(interp)?;
         let lhs = pop_uint(interp)?;
-        interp.stack.push(Expr::Word(vec![(lhs < rhs) as _]));
+        interp.stack.push(Expr::Bytes(smallvec![(lhs < rhs) as _]));
         Ok(())
     }
 
     pub fn gt_unsigned(interp: &mut Interpreter) -> anyhow::Result<()> {
         let rhs = pop_uint(interp)?;
         let lhs = pop_uint(interp)?;
-        interp.stack.push(Expr::Word(vec![(lhs > rhs) as _]));
+        interp.stack.push(Expr::Bytes(smallvec![(lhs > rhs) as _]));
         Ok(())
     }
 
@@ -253,10 +259,10 @@ mod builtins {
     }
 }
 
-fn is_truthy(w: WordRef) -> bool {
+fn is_truthy(w: BytesRef) -> bool {
     w.iter().any(|&b| b != 0)
 }
 
-fn uint(w: Word) -> BigUint {
+fn uint(w: Bytes) -> BigUint {
     BigUint::from_bytes_le(&w)
 }

@@ -9,6 +9,7 @@ edition = "2021"
 
 [dependencies]
 itertools = "*"
+smallvec = "*"
 num-bigint = "*"
 num-traits = "*"
 anyhow = "*"
